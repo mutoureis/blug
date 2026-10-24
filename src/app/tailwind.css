@@ -160,3 +160,120 @@ body > * {
   text-transform: uppercase;
   color: #71717a;
 }
+
+/* Baris chip yang bisa digeser horizontal di HP (blog, gallery); di md+ kembali membungkus.
+   --chip-bleed = padding horizontal halaman, supaya chip bisa "menempel" ke tepi layar. */
+.chip-scroll {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-inline: calc(var(--chip-bleed, 2rem) * -1);
+  padding-inline: var(--chip-bleed, 2rem);
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.chip-scroll::-webkit-scrollbar {
+  display: none;
+}
+.chip-scroll > * {
+  flex: none;
+}
+@media (min-width: 768px) {
+  .chip-scroll {
+    flex-wrap: wrap;
+    overflow: visible;
+    margin-inline: 0;
+    padding-inline: 0;
+  }
+}
+
+/* Menu Social — bottom sheet di HP, popover di bawah header di desktop.
+   z-index: scrim 40 < sheet 45 < nav/header 50 (tombol Social tetap bisa ditekan saat terbuka). */
+.social-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0s linear 0.25s;
+}
+.social-scrim[data-open='true'] {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.social-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin-inline: auto;
+  width: 100%;
+  max-width: 420px;
+  z-index: 45;
+  max-height: 82dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #121214;
+  border: 1px solid #26262a;
+  border-bottom: 0;
+  border-radius: 26px 26px 0 0;
+  padding: 10px 16px calc(96px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(105%);
+  visibility: hidden;
+  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 0.32s;
+}
+.social-sheet[data-open='true'] {
+  transform: none;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.social-grab {
+  width: 40px;
+  height: 4px;
+  border-radius: 4px;
+  background: #34343a;
+  margin: 0 auto 14px;
+}
+.social-row {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.social-sheet[data-open='true'] .social-row {
+  animation: fade-up 0.4s ease forwards;
+  animation-delay: calc(var(--i, 0) * 0.04s + 0.08s);
+}
+@media (min-width: 640px) {
+  .social-sheet {
+    bottom: auto;
+    top: 62px;
+    max-width: 320px;
+    border: 1px solid #26262a;
+    border-radius: 18px;
+    padding: 12px;
+    transform: translateY(-8px);
+    opacity: 0;
+    transition: transform 0.2s ease, opacity 0.2s ease, visibility 0s linear 0.2s;
+  }
+  .social-sheet[data-open='true'] {
+    opacity: 1;
+  }
+  .social-grab {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .social-sheet,
+  .social-scrim {
+    transition: none !important;
+  }
+  .social-row,
+  .social-sheet[data-open='true'] .social-row {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

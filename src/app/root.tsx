@@ -16,14 +16,15 @@ import {json, LinksFunction} from '@remix-run/node'
 import styles from './tailwind.css?url'
 import {getProfile} from 'src/atproto'
 import {AppBskyActorDefs} from '@atproto/api'
+import {SocialSheet} from './components/social-sheet.js'
 
 export const links: LinksFunction = () => [
   {rel: 'stylesheet', href: styles},
   {rel: 'icon', href: '/favicon.ico'},
   {rel: 'preconnect', href: 'https://fonts.googleapis.com'},
   {rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous'},
-  {href: 'https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,300..900;1,7..72,300..900&display=swap', rel: 'stylesheet'},
-  {href: 'https://fonts.googleapis.com/css2?family=Recursive:slnt,wght,CASL,MONO@-15..0,300..900,0..1,0..1&display=swap', rel: 'stylesheet'},
+  {href: 'https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400..700;1,7..72,400..700&display=swap', rel: 'stylesheet'},
+  {href: 'https://fonts.googleapis.com/css2?family=Recursive:wght,CASL,MONO@400..600,0..1,0..1&display=swap', rel: 'stylesheet'},
 ]
 
 export const loader = async () => {
@@ -35,16 +36,6 @@ export const loader = async () => {
     return json({profile: null})
   }
 }
-
-const SOCIALS = [
-  {icon: '🧵', label: 'Threads',   href: 'https://www.threads.com/@rioumoe'},
-  {icon: '📸', label: 'Instagram', href: 'https://www.instagram.com/mthrrbrqh'},
-  {icon: '🎬', label: 'Letterboxd', href: 'https://boxd.it/hBByx'},
-  {icon: '💬', label: 'Discord',   href: 'https://discord.gg/DNcNBQaqgM'},
-  {icon: '🎵', label: 'Spotify',   href: 'https://open.spotify.com/user/zq8df1jprwpxyiu9mkn691ai8'},
-  {icon: '🎮', label: 'Steam',     href: 'https://steamcommunity.com/id/moebatsu'},
-  {icon: '✉️', label: 'Email',     href: 'mailto:amuthohhari@gmail.com'},
-]
 
 const PAGE_ORDER = ['/', '/blog', '/gallery']
 
@@ -66,6 +57,7 @@ export function Layout({children}: {children: React.ReactNode}) {
   const touchStartX = React.useRef(0)
   const touchStartY = React.useRef(0)
   const dragging = React.useRef(false)
+  const swipeBlocked = React.useRef(false)
   const [dragOffset, setDragOffset] = React.useState(0)
   const [contactOpen, setContactOpen] = React.useState(false)
 
@@ -100,11 +92,14 @@ export function Layout({children}: {children: React.ReactNode}) {
   }, [location.pathname])
 
   React.useEffect(() => {
-    if (!isMainPage) return
+    // Jangan ada swipe antar halaman saat menu Social terbuka
+    if (!isMainPage || contactOpen) return
 
     const onTouchStart = (e: TouchEvent) => {
       // Jangan aktifkan page swipe kalau lightbox sedang terbuka
       if (document.querySelector('[style*="z-index: 9999"]')) return
+      // Area yang scroll horizontal sendiri (mis. baris chip) ditandai data-no-swipe
+      swipeBlocked.current = !!(e.target as Element | null)?.closest?.('[data-no-swipe]')
       touchStartX.current = e.touches[0].clientX
       touchStartY.current = e.touches[0].clientY
       dragging.current = false
@@ -112,6 +107,7 @@ export function Layout({children}: {children: React.ReactNode}) {
     }
 
     const onTouchMove = (e: TouchEvent) => {
+      if (swipeBlocked.current) return
       if (document.querySelector('[style*="z-index: 9999"]')) return
       const dx = e.touches[0].clientX - touchStartX.current
       const dy = Math.abs(e.touches[0].clientY - touchStartY.current)
@@ -128,6 +124,10 @@ export function Layout({children}: {children: React.ReactNode}) {
     }
 
     const onTouchEnd = (e: TouchEvent) => {
+      if (swipeBlocked.current) {
+        swipeBlocked.current = false
+        return
+      }
       if (document.querySelector('[style*="z-index: 9999"]')) return
       const dx = touchStartX.current - e.changedTouches[0].clientX
       const dy = Math.abs(touchStartY.current - e.changedTouches[0].clientY)
@@ -149,13 +149,13 @@ export function Layout({children}: {children: React.ReactNode}) {
       document.removeEventListener('touchmove', onTouchMove)
       document.removeEventListener('touchend', onTouchEnd)
     }
-  }, [isMainPage, currentIndex, navigate])
+  }, [isMainPage, contactOpen, currentIndex, navigate])
 
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         {/* Site-wide social preview defaults — individual routes can still
             override title/description via their own meta() export. */}
         <meta property="og:type" content="website" />
@@ -200,36 +200,14 @@ export function Layout({children}: {children: React.ReactNode}) {
           </header>
 
           {/* ── Mobile: pill nav ngambang di bawah layar ── */}
-          <nav className="sm:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50
+          <nav className="sm:hidden fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 -translate-x-1/2 z-50
             flex items-center gap-1 rounded-full p-1 border border-[#242424] shadow-2xl shadow-black/50"
             style={{background: 'rgba(18,18,18,0.9)', backdropFilter: 'blur(16px)'}}>
             {navItems.map(item => <PillNavItem key={item.key} item={item} />)}
           </nav>
 
-          {/* ── Social popover: dibuka lewat item "Social" di pill nav, posisinya ngikutin
-              pill-nya sendiri (nempel bawah pill di mobile, nempel bawah header di desktop) ── */}
-          {contactOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setContactOpen(false)} />
-              <div className="fixed z-50 left-1/2 -translate-x-1/2 w-[240px] rounded-2xl
-                border border-[#242424] p-2 bottom-[84px] sm:bottom-auto sm:top-[62px] shadow-2xl shadow-black/50"
-                style={{background: 'rgba(18,18,18,0.97)', backdropFilter: 'blur(16px)'}}>
-                {SOCIALS.map(({icon, label, href}) => (
-                  <a
-                    key={label}
-                    href={href}
-                    target={href.startsWith('mailto') ? undefined : '_blank'}
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-white/5 transition-colors">
-                    <div className="w-7 h-7 rounded-lg bg-[#1e1e1e] flex items-center justify-center text-sm shrink-0">
-                      {icon}
-                    </div>
-                    <span className="font-mono text-[14px] text-[#cccccc]">{label}</span>
-                  </a>
-                ))}
-              </div>
-            </>
-          )}
+          {/* ── Menu Social: bottom sheet di HP, popover di desktop ── */}
+          <SocialSheet open={contactOpen} onClose={() => setContactOpen(false)} />
 
           {/* Konten — live drag transform saat swipe, plus fade halus tiap ganti halaman/loader jalan */}
           <main
