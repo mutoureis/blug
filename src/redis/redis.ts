@@ -77,3 +77,24 @@ export const setCachedProfile = async (
     console.error('setCachedProfile error:', err)
   }
 }
+
+// Cache hasil Gallery (daftar foto dari Bluesky). Loader Gallery dulu memanggil getRecord
+// satu per satu untuk tiap post di SETIAP kunjungan; dengan cache ini cukup sekali per 10 menit.
+export const getCachedGallery = async <T>(): Promise<T | null> => {
+  try {
+    const res = await getClient().get('gallery')
+    if (!res) return null
+    return JSON.parse(res) as T
+  } catch (err) {
+    console.error('getCachedGallery error:', err)
+    return null
+  }
+}
+
+export const setCachedGallery = async (data: unknown): Promise<void> => {
+  try {
+    await getClient().set('gallery', JSON.stringify(data), 'EX', 60 * 10)
+  } catch (err) {
+    console.error('setCachedGallery error:', err)
+  }
+}
