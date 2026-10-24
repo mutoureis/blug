@@ -4,40 +4,9 @@ import {getDid} from '../../atproto/getDid.js'
 import {Link, useLoaderData, useNavigation} from '@remix-run/react'
 import {useMemo, useState, useEffect} from 'react'
 import type {CSSProperties} from 'react'
-import {LeafletDocument, LeafletBlock} from 'src/types'
+import {LeafletDocument} from 'src/types'
 import {NowPlayingWidget} from '../components/now-playing-widget.js'
-
-// Walks a Leaflet document's blocks (including nested list children) and
-// sums up the plaintext so we can estimate reading time — same content the
-// reader will actually see on the post page, not just the trimmed excerpt.
-function estimateReadingMinutes(doc: Pick<LeafletDocument, 'content'>): number {
-  let words = 0
-  const countText = (text?: string) => {
-    if (!text) return
-    words += text.trim().split(/\s+/).filter(Boolean).length
-  }
-  const walk = (blocks: LeafletBlock[]) => {
-    for (const {block} of blocks) {
-      switch (block.$type) {
-        case 'pub.leaflet.blocks.text':
-        case 'pub.leaflet.blocks.blockquote':
-        case 'pub.leaflet.blocks.header':
-        case 'pub.leaflet.blocks.code':
-          countText(block.plaintext)
-          break
-        case 'pub.leaflet.blocks.list':
-          for (const child of block.children.content) {
-            if ('plaintext' in child) countText(child.plaintext)
-          }
-          break
-        default:
-          break
-      }
-    }
-  }
-  for (const page of doc.content?.pages ?? []) walk(page.blocks)
-  return Math.max(1, Math.round(words / 200)) // ~200 wpm average reading speed
-}
+import {estimateReadingMinutes, formatDate} from '../lib/post-utils.js'
 
 export const loader = async () => {
   try {
@@ -63,15 +32,17 @@ type FeedEntry = {
   href: string
   title: string
   date: Date
-  meta: string
   tags: string[]
   excerpt?: string
   readingMinutes?: number
 }
 
+type MonthGroup = {label: string; items: {entry: FeedEntry; index: number}[]}
+
 export default function Blog() {
   const {posts} = useLoaderData<{posts: LeafletDocument[]; did: string}>()
   const [activeTag, setActiveTag] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
   const navigation = useNavigation()
   const isLoadingRoute = navigation.state === 'loading'
 
@@ -80,9 +51,8 @@ export default function Blog() {
       .map(p => ({
         key: `post-${p.rkey}`,
         href: `/posts/${p.rkey}`,
-        title: p.title,
+        title: String(p.title),
         date: new Date(p.publishedAt),
-        meta: p.tags?.[0] ? p.tags[0] : 'Blog',
         tags: p.tags ?? [],
         excerpt: p.description,
         readingMinutes: estimateReadingMinutes(p),
@@ -106,11 +76,40 @@ export default function Blog() {
     }
   }, [allTags, activeTag])
 
+  const q = query.trim().toLowerCase()
   const filtered = useMemo(() => {
-    if (!activeTag) return entries
-    const key = activeTag.toLowerCase()
-    return entries.filter(e => e.tags.some(t => t.toLowerCase() === key))
-  }, [entries, activeTag])
+    return entries.filter(e => {
+      if (activeTag && !e.tags.some(t => t.toLowerCase() === activeTag.toLowerCase())) return false
+      if (!q) return true
+      return (
+        e.title.toLowerCase().includes(q) ||
+        (e.excerpt ?? '').toLowerCase().includes(q) ||
+        e.tags.some(t => t.toLowerCase().includes(q))
+      )
+    })
+  }, [entries, activeTag, q])
+
+  // Kartu unggulan cuma muncul kalau lagi tidak menyaring/mencari.
+  const isFiltering = Boolean(activeTag) || q.length > 0
+  const featured = !isFiltering && filtered.length > 0 ? filtered[0] : null
+  const rest = featured ? filtered.slice(1) : filtered
+
+  // Kelompokkan per bulan (urutan tetap: terbaru dulu). `index` dipakai untuk delay animasi.
+  const groups: MonthGroup[] = useMemo(() => {
+    const out: MonthGroup[] = []
+    rest.forEach((entry, index) => {
+      const label = formatDate(entry.date, {month: 'long', year: 'numeric'})
+      const last = out[out.length - 1]
+      if (last && last.label === label) last.items.push({entry, index})
+      else out.push({label, items: [{entry, index}]})
+    })
+    return out
+  }, [rest])
+
+  const clearFilters = () => {
+    setActiveTag(null)
+    setQuery('')
+  }
 
   return (
     <div className="flex" style={{minHeight: 'calc(100vh - 52px - 48px)'}}>
@@ -120,29 +119,58 @@ export default function Blog() {
         <div className="w-full max-w-3xl px-8 md:px-14 py-10">
 
           {/* Hero */}
-          <section className="mb-10">
+          <section className="mb-6">
             <h1 className="font-display text-[42px] md:text-[46px] text-[#f0f0f0] leading-tight tracking-[-0.02em]">
               Writing<span className="text-[#4a9eff]">.</span>
             </h1>
             <p className="font-mono text-[17px] text-[#aaaaaa] mt-2">Just writing random stuff here.</p>
+            {entries.length > 0 && (
+              <p className="font-mono text-[12px] text-[#8b8b93] mt-2">
+                {entries.length} {entries.length === 1 ? 'post' : 'posts'} · latest {formatDate(entries[0].date)}
+              </p>
+            )}
           </section>
 
-          {/* Tag filter */}
-          {allTags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-8">
-              {allTags.map(tag => (
-                <button
-                  key={tag}
-                  onClick={() => setActiveTag(activeTag?.toLowerCase() === tag.toLowerCase() ? null : tag)}
-                  className={`font-mono text-[12px] px-2.5 py-1 rounded-full border transition-all ${
-                    activeTag?.toLowerCase() === tag.toLowerCase()
-                      ? 'text-[#4a9eff] border-[#4a9eff] bg-[#1e1e1e]'
-                      : 'text-[#666] border-[#2a2a2a] bg-[#1a1a1a] hover:text-[#f0f0f0] hover:border-[#555]'
-                  }`}>
-                  {tag}
-                </button>
-              ))}
-            </div>
+          {entries.length > 0 && (
+            <>
+              {/* Search */}
+              <label className="flex items-center gap-2 rounded-xl border border-[#1e1e1e] bg-[#111111] px-3 py-2.5 mb-3 focus-within:border-[#4a9eff]/60 transition-colors">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#666"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  className="w-4 h-4 shrink-0"
+                  aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.5-3.5" />
+                </svg>
+                <input
+                  type="search"
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Search writing…"
+                  aria-label="Search writing"
+                  className="flex-1 min-w-0 bg-transparent outline-none font-mono text-[13px] text-[#f0f0f0] placeholder:text-[#555]"
+                />
+              </label>
+
+              {/* Tag filter — satu baris yang bisa digeser di HP (data-no-swipe: jangan ikut memicu swipe antar halaman) */}
+              {allTags.length > 0 && (
+                <div className="chip-scroll mb-6" data-no-swipe>
+                  <TagChip active={activeTag === null} onClick={() => setActiveTag(null)}>All</TagChip>
+                  {allTags.map(tag => (
+                    <TagChip
+                      key={tag}
+                      active={activeTag?.toLowerCase() === tag.toLowerCase()}
+                      onClick={() => setActiveTag(activeTag?.toLowerCase() === tag.toLowerCase() ? null : tag)}>
+                      {tag}
+                    </TagChip>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           {/* Feed */}
@@ -151,18 +179,27 @@ export default function Blog() {
           ) : filtered.length === 0 ? (
             <div className="py-4">
               <p className="font-mono text-[17px] text-[#444]">Nothing here yet.</p>
-              {activeTag && (
+              {isFiltering && (
                 <button
-                  onClick={() => setActiveTag(null)}
+                  onClick={clearFilters}
                   className="font-mono text-[13px] text-[#4a9eff] hover:text-[#7c6ff7] transition-colors mt-2">
                   Clear filters
                 </button>
               )}
             </div>
           ) : (
-            <ul className="divide-y divide-[#1a1a1a]">
-              {filtered.map((entry, i) => <FeedItem entry={entry} index={i} key={entry.key} />)}
-            </ul>
+            <>
+              {featured && <FeaturedCard entry={featured} />}
+
+              {groups.map(group => (
+                <section key={group.label} className="mb-3">
+                  <p className="label mt-2 mb-1">{group.label}</p>
+                  <ul className="border-t border-[#1a1a1a] divide-y divide-[#1a1a1a]">
+                    {group.items.map(({entry, index}) => <FeedItem entry={entry} index={index} key={entry.key} />)}
+                  </ul>
+                </section>
+              ))}
+            </>
           )}
         </div>
       </div>
@@ -178,18 +215,61 @@ export default function Blog() {
 
 /* ── Sub-components ── */
 
+function TagChip({active, onClick, children}: {active: boolean; onClick: () => void; children: React.ReactNode}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`font-mono text-[12px] px-3 py-1.5 rounded-full border transition-colors ${
+        active
+          ? 'text-[#4a9eff] border-[#4a9eff] bg-[rgba(74,158,255,0.1)]'
+          : 'text-[#8b8b93] border-[#262626] bg-[#151515] hover:text-[#f0f0f0] hover:border-[#555]'
+      }`}>
+      {children}
+    </button>
+  )
+}
+
+function FeaturedCard({entry}: {entry: FeedEntry}) {
+  return (
+    <Link
+      to={entry.href}
+      prefetch="intent"
+      className="group block rounded-[18px] p-px mb-7 fade-up-item"
+      style={{background: 'linear-gradient(135deg, rgba(74,158,255,0.6), rgba(124,111,247,0.5), transparent 70%)'}}>
+      <div className="rounded-[17px] bg-[#101012] p-5">
+        <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#4a9eff]">Latest</span>
+        <h2 className="title-underline font-display text-[22px] md:text-[26px] leading-snug text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors mt-2">
+          {entry.title}
+        </h2>
+        {entry.excerpt && (
+          <p className="font-sans text-[14px] md:text-[15px] text-[#9a9aa2] leading-relaxed line-clamp-2 mt-2">
+            {entry.excerpt}
+          </p>
+        )}
+        <p className="font-mono text-[11.5px] text-[#666] mt-3">
+          {entry.tags.length > 0 && <span className="uppercase tracking-[0.06em]">{entry.tags.join(' · ')} · </span>}
+          {entry.readingMinutes != null && <>{entry.readingMinutes} min read · </>}
+          {formatDate(entry.date)}
+        </p>
+      </div>
+    </Link>
+  )
+}
+
 function FeedItem({entry, index}: {entry: FeedEntry; index: number}) {
   return (
     <li className="fade-up-item" style={{'--delay': `${Math.min(index, 8) * 0.06}s`} as CSSProperties}>
-      <Link to={entry.href} prefetch="intent" className="group block py-6">
+      <Link to={entry.href} prefetch="intent" className="group block py-5">
         <div className="flex items-baseline justify-between gap-4">
-          <h3 className="title-underline font-display text-[22px] md:text-[24px] text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors leading-snug">
+          <h3 className="title-underline font-display text-[20px] md:text-[24px] text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors leading-snug">
             {entry.title}
           </h3>
           <time
             className="font-mono text-[13px] text-[#666] shrink-0"
             dateTime={entry.date.toISOString()}>
-            {entry.date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'})}
+            {formatDate(entry.date, {month: 'short', day: 'numeric'})}
           </time>
         </div>
         <div className="flex items-center gap-2 font-mono text-[13px] text-[#666] mt-1.5">
@@ -204,7 +284,7 @@ function FeedItem({entry, index}: {entry: FeedEntry; index: number}) {
           )}
         </div>
         {entry.excerpt && (
-          <p className="font-sans text-[15px] text-[#888] leading-relaxed line-clamp-1 mt-2">
+          <p className="font-sans text-[15px] text-[#888] leading-relaxed line-clamp-2 mt-2">
             {entry.excerpt}
           </p>
         )}

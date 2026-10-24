@@ -1,6 +1,9 @@
 import {useLoaderData} from '@remix-run/react'
 import {json} from '@remix-run/node'
-import {useState, useEffect, useCallback, useRef} from 'react'
+import {useState, useEffect, useCallback, useMemo, useRef} from 'react'
+import type {CSSProperties} from 'react'
+import {getCachedGallery, setCachedGallery} from '../../redis/redis.js'
+import {formatDate} from '../lib/post-utils.js'
 
 const HANDLE = 'mutho.my.id'
 const THUMB_W = 480
@@ -20,6 +23,21 @@ async function resolveDid() {
   const {did} = await res.json()
   _did = did; _didAt = Date.now()
   return did
+}
+
+// Jalankan `fn` untuk tiap item dengan paling banyak `limit` request berbarengan,
+// supaya ratusan getRecord tidak menghantam Bluesky sekaligus.
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let next = 0
+  const workers = Array.from({length: Math.min(limit, items.length)}, async () => {
+    while (next < items.length) {
+      const i = next++
+      out[i] = await fn(items[i])
+    }
+  })
+  await Promise.all(workers)
+  return out
 }
 
 type ImageItem = {thumb: string; full: string; width: number; height: number; alt: string}
@@ -47,7 +65,7 @@ async function fetchZeensPhotos(did: string): Promise<PhotoPost[]> {
   }
 
   // Tarik post Bluesky asli satu-satu (paralel) buat dapetin semua blob foto + aspect ratio-nya
-  const results = await Promise.all(metaRecords.map(async (meta: any): Promise<PhotoPost | null> => {
+  const results = await mapPool(metaRecords, 12, async (meta: any): Promise<PhotoPost | null> => {
     const rkey = meta.uri.split('/').pop()
     try {
       const res = await fetch(`https://bsky.social/xrpc/com.atproto.repo.getRecord?repo=${did}&collection=app.bsky.feed.post&rkey=${rkey}`)
@@ -71,7 +89,7 @@ async function fetchZeensPhotos(did: string): Promise<PhotoPost[]> {
     } catch {
       return null
     }
-  }))
+  })
 
   return results
     .filter((p): p is PhotoPost => p !== null)
@@ -79,15 +97,25 @@ async function fetchZeensPhotos(did: string): Promise<PhotoPost[]> {
 }
 
 export const loader = async () => {
+  const headers = {
+    Link: '<https://wsrv.nl>; rel=preconnect, <https://bsky.social>; rel=preconnect',
+    'Cache-Control': 'public, max-age=60, stale-while-revalidate=600',
+  }
+
+  // Dulu: tiap kunjungan = ratusan request ke Bluesky sebelum halaman tampil.
+  // Sekarang: hasilnya di-cache di Redis 10 menit.
+  const cached = await getCachedGallery<{posts: PhotoPost[]; did: string}>()
+  if (cached) return json(cached, {headers})
+
   const did = await resolveDid()
   const posts = await fetchZeensPhotos(did)
+  const payload = {posts, did}
+  if (posts.length > 0) await setCachedGallery(payload) // jangan cache hasil kosong (mungkin gagal sementara)
 
-  return json({posts, did}, {
-    headers: {Link: '<https://wsrv.nl>; rel=preconnect, <https://bsky.social>; rel=preconnect'},
-  })
+  return json(payload, {headers})
 }
 
-function Lightbox({images, initialIndex, onClose}: {images: ImageItem[]; initialIndex: number; onClose: () => void}) {
+function Lightbox({images, initialIndex, onClose, dateLabel}: {images: ImageItem[]; initialIndex: number; onClose: () => void; dateLabel?: string}) {
   // images di sini cuma foto dari 1 post yang lagi dibuka — geser cuma jalan kalau post-nya
   // punya lebih dari 1 foto, nggak lompat ke post lain.
   const [index, setIndex] = useState(initialIndex)
@@ -156,15 +184,23 @@ function Lightbox({images, initialIndex, onClose}: {images: ImageItem[]; initial
       (e: TouchEvent) => {
         if (touchStartX.current === null) return
         const dx = touchStartX.current - e.changedTouches[0].clientX
-        const dy = Math.abs((touchStartY.current ?? 0) - e.changedTouches[0].clientY)
+        const rawDy = e.changedTouches[0].clientY - (touchStartY.current ?? 0)
+        // Swipe ke bawah = tutup foto
+        if (rawDy > 90 && Math.abs(dx) < rawDy * 0.6) {
+          touchStartX.current = null; touchStartY.current = null
+          onClose()
+          return
+        }
+        const dy = Math.abs(rawDy)
         if (Math.abs(dx) > 50 && dy < Math.abs(dx) * 0.8) dx > 0 ? next() : prev()
         touchStartX.current = null; touchStartY.current = null
-      }
+      },
+      dateLabel
     )
     const handleResize = () => positionArrows(div, images[index])
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [index, images, prev, next, goTo, onClose])
+  }, [index, images, prev, next, goTo, onClose, dateLabel])
 
   // Keyboard
   useEffect(() => {
@@ -225,6 +261,7 @@ function renderLightboxContent(
   onClose: () => void,
   onTouchStart: (e: TouchEvent) => void,
   onTouchEnd: (e: TouchEvent) => void,
+  dateLabel?: string,
 ) {
   // Thumbnail strip cuma masuk akal buat navigasi cepat kalau jumlahnya dikit — begitu udah
   // lintas banyak post, tampilin strip buat sebagian kecil di sekitar foto yang lagi dibuka aja.
@@ -281,6 +318,13 @@ function renderLightboxContent(
       </div>
       ` : ''}
 
+      ${dateLabel ? `
+      <div style="flex-shrink:0;background:#000;text-align:center;font-family:monospace;font-size:11px;
+        color:rgba(255,255,255,0.4);padding:10px 20px ${hasAlt ? '2px' : 'calc(14px + env(safe-area-inset-bottom))'};">
+        ${escapeHtml(dateLabel)} · swipe down to close
+      </div>
+      ` : ''}
+
       ${hasAlt ? `
       <div style="flex-shrink:0;background:#000;box-sizing:border-box;
         max-height:30dvh;overflow-y:auto;
@@ -328,8 +372,12 @@ function PhotoTile({post, eager, onClick}: {post: PhotoPost; eager?: boolean; on
   const [loaded, setLoaded] = useState(false)
   return (
     <div
-      className="relative mb-3 break-inside-avoid overflow-hidden cursor-zoom-in bg-[#111]"
-      onClick={e => { e.preventDefault(); onClick() }}>
+      role="button"
+      tabIndex={0}
+      aria-label="Open photo"
+      className="relative mb-3 break-inside-avoid overflow-hidden rounded-xl cursor-zoom-in bg-[#111] transition-transform duration-150 active:scale-[0.97]"
+      onClick={e => { e.preventDefault(); onClick() }}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}>
       {/* Shimmer placeholder shown until the actual thumbnail finishes loading */}
       {!loaded && (
         <div
@@ -347,7 +395,7 @@ function PhotoTile({post, eager, onClick}: {post: PhotoPost; eager?: boolean; on
         className="block w-full h-auto transition-opacity duration-300"
       />
       {post.images.length > 1 && (
-        <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/60 rounded-full px-2 py-0.5">
+        <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/60 rounded-full px-2 py-0.5 backdrop-blur-sm">
           <span className="font-mono text-[11px] text-white/90">1/{post.images.length}</span>
         </div>
       )}
@@ -355,10 +403,53 @@ function PhotoTile({post, eager, onClick}: {post: PhotoPost; eager?: boolean; on
   )
 }
 
+const PAGE_SIZE = 24
+
+type MonthGroup = {label: string; posts: PhotoPost[]}
+
 export default function Gallery() {
-  const {posts} = useLoaderData<typeof loader>()
-  const [lightbox, setLightbox] = useState<{postIndex: number} | null>(null)
-  const totalPhotos = posts.reduce((sum: number, p: PhotoPost) => sum + p.images.length, 0)
+  const {posts} = useLoaderData<typeof loader>() as unknown as {posts: PhotoPost[]; did: string}
+  const [lightboxPost, setLightboxPost] = useState<PhotoPost | null>(null)
+  const [year, setYear] = useState<string | null>(null)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+
+  const totalPhotos = posts.reduce((sum, p) => sum + p.images.length, 0)
+  const yearOf = (p: PhotoPost) => formatDate(p.createdAt, {year: 'numeric'})
+  const years = useMemo(() => Array.from(new Set(posts.map(yearOf))).sort((a, b) => b.localeCompare(a)), [posts])
+  const yearRange = years.length > 1 ? `${years[years.length - 1]}–${years[0]}` : years[0]
+
+  const filtered = useMemo(() => (year ? posts.filter(p => yearOf(p) === year) : posts), [posts, year])
+  const visible = filtered.slice(0, visibleCount)
+  const hasMore = visibleCount < filtered.length
+
+  // Muat 24 post dulu; sisanya otomatis saat sentinel di dasar daftar mendekati layar (infinite scroll).
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [year])
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !hasMore) return
+    const io = new IntersectionObserver(
+      entries => { if (entries[0].isIntersecting) setVisibleCount(c => c + PAGE_SIZE) },
+      {rootMargin: '600px'},
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [hasMore, visibleCount])
+
+  const groups: MonthGroup[] = useMemo(() => {
+    const out: MonthGroup[] = []
+    visible.forEach(p => {
+      const label = formatDate(p.createdAt, {month: 'long', year: 'numeric'})
+      const last = out[out.length - 1]
+      if (last && last.label === label) last.posts.push(p)
+      else out.push({label, posts: [p]})
+    })
+    return out
+  }, [visible])
+
+  let tileIndex = 0
 
   return (
     <div className="flex" style={{minHeight: 'calc(100vh - 52px - 48px)'}}>
@@ -368,32 +459,69 @@ export default function Gallery() {
 
       {/* ── Main Content ── */}
       <div className="flex-1 px-6 md:px-14 py-8 min-w-0">
-        {lightbox && (
+        {lightboxPost && (
           <Lightbox
-            images={posts[lightbox.postIndex].images}
+            images={lightboxPost.images}
             initialIndex={0}
-            onClose={() => setLightbox(null)}
+            dateLabel={formatDate(lightboxPost.createdAt)}
+            onClose={() => setLightboxPost(null)}
           />
         )}
 
-        <header className="mb-8">
+        <header className="mb-6">
           <h1 className="font-display text-[42px] md:text-[46px] text-[#f0f0f0] tracking-[-0.02em]">Gallery<span className="text-[#4a9eff]">.</span></h1>
           <p className="font-mono text-[17px] text-[#aaaaaa] mt-2">Just dropping some memories here.</p>
+          {/* Di HP jumlah foto tampil di sini (di desktop ada di sidebar kanan) */}
+          {posts.length > 0 && (
+            <p className="lg:hidden font-mono text-[12px] text-[#8b8b93] mt-3">
+              <span className="text-[#f0f0f0]">{totalPhotos}</span> photos ·{' '}
+              <span className="text-[#f0f0f0]">{posts.length}</span> posts · {yearRange}
+            </p>
+          )}
         </header>
+
+        {years.length > 1 && (
+          <div className="chip-scroll mb-4" style={{'--chip-bleed': '1.5rem'} as CSSProperties} data-no-swipe>
+            {[null, ...years].map(y => (
+              <button
+                key={y ?? 'all'}
+                type="button"
+                aria-pressed={year === y}
+                onClick={() => setYear(y)}
+                className={`font-mono text-[12px] px-3 py-1.5 rounded-full border transition-colors ${
+                  year === y
+                    ? 'text-[#4a9eff] border-[#4a9eff] bg-[rgba(74,158,255,0.1)]'
+                    : 'text-[#8b8b93] border-[#262626] bg-[#151515] hover:text-[#f0f0f0] hover:border-[#555]'
+                }`}>
+                {y ?? 'All'}
+              </button>
+            ))}
+          </div>
+        )}
 
         {posts.length === 0 ? (
           <p className="font-mono text-[19px] text-[#555]">Belum ada foto.</p>
         ) : (
-          <div className="columns-2 sm:columns-3 gap-3">
-            {posts.map((post: PhotoPost, index: number) => (
-              <PhotoTile
-                key={index}
-                post={post}
-                eager={index < 6}
-                onClick={() => setLightbox({postIndex: index})}
-              />
+          <>
+            {groups.map(group => (
+              <section key={group.label}>
+                {/* Header bulan menempel saat scroll */}
+                <div
+                  className="sticky top-0 sm:top-[52px] z-10 -mx-6 md:-mx-14 px-6 md:px-14 py-2.5 mb-2 flex justify-between font-mono text-[11px] tracking-[0.16em] uppercase text-[#8b8b93]"
+                  style={{background: 'rgba(10,10,10,0.88)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)'}}>
+                  <span>{group.label}</span>
+                  <span>{group.posts.length}</span>
+                </div>
+                <div className="columns-2 sm:columns-3 gap-3 mb-2">
+                  {group.posts.map(post => {
+                    const i = tileIndex++
+                    return <PhotoTile key={post.createdAt + i} post={post} eager={i < 6} onClick={() => setLightboxPost(post)} />
+                  })}
+                </div>
+              </section>
             ))}
-          </div>
+            {hasMore && <div ref={sentinelRef} className="h-12" aria-hidden="true" />}
+          </>
         )}
       </div>
 
