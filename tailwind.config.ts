@@ -12,6 +12,7 @@ export default {
       },
     },
     borderWidth: {
+      DEFAULT: '1px', // tanpa ini `border`, `border-t`, `border-b`, dst. tidak menghasilkan CSS
       0: '0',
       1: '1px',
       2: '2px',
@@ -32,6 +33,12 @@ export default {
       900: '#d4d4d8',
       950: '#fafafa',
       gray: '#ffffff',
+      // theme.colors menimpa palet bawaan: tanpa 4 baris ini `bg-black/60`, `text-white/90`,
+      // `hover:bg-white/5`, `shadow-black/50` (dipakai di kode) tidak menghasilkan CSS.
+      white: '#ffffff',
+      black: '#000000',
+      transparent: 'transparent',
+      current: 'currentColor',
     },
     extend: {
       // Consistent type scale (1.25 ratio) so new UI doesn't reach for random
