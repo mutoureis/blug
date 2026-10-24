@@ -57,7 +57,9 @@ export const loader = async () => {
 type ImageItem = {thumb: string; full: string; width: number; height: number}
 
 const SOCIALS = [
-  {icon: '🦋', label: 'Bluesky',  href: 'https://bsky.app/profile/mutho.my.id'},
+  {icon: '🧵', label: 'Threads',  href: 'https://www.threads.com/@rioumoe'},
+  {icon: '📸', label: 'Instagram', href: 'https://www.instagram.com/mthrrbrqh'},
+  {icon: '🎬', label: 'Letterboxd', href: 'https://boxd.it/hBByx'},
   {icon: '💬', label: 'Discord',  href: 'https://discord.gg/DNcNBQaqgM'},
   {icon: '🌾', label: 'Grain', href: 'https://grain.social/profile/mutho.my.id'},
   {icon: '🎵', label: 'Spotify',  href: 'https://open.spotify.com/user/zq8df1jprwpxyiu9mkn691ai8'},
