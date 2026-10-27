@@ -167,7 +167,7 @@ export function Layout({children}: {children: React.ReactNode}) {
         <script async src="https://embed.bsky.app/static/embed.js" />
       </head>
       <body
-        className="flex flex-col min-h-screen bg-[#0a0a0a] text-[#f0f0f0] antialiased font-sans pb-24 sm:pb-0">
+        className="flex flex-col min-h-screen bg-[#0a0a0a] text-[#f0f0f0] antialiased font-sans pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))] sm:pb-0">
         {/* Ambient gradient mesh, sits below the existing film-grain layer (tailwind.css body::before) */}
         <div className="bg-mesh" aria-hidden="true" />
 
