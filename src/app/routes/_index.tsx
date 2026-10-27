@@ -4,41 +4,89 @@ import type {CSSProperties} from 'react'
 import {getPosts} from '../../atproto/index.js'
 import {useLanyard, DISCORD_STATUS_META, DISCORD_USER_ID} from '../hooks/use-lanyard.js'
 import {NowPlayingWidget, NowPlayingCard} from '../components/now-playing-widget.js'
-import {estimateReadingMinutes, formatDate} from '../lib/post-utils.js'
+import {formatDate} from '../lib/post-utils.js'
+import {getCachedGallery, getCachedLatestPhoto, setCachedLatestPhoto} from '../../redis/redis.js'
 
 export const meta: MetaFunction = () => [
   {title: 'About | mutho.'},
   {name: 'description', content: 'About Mutho — hanya seorang guru dan murid abadi'},
 ]
 
-type LatestPost = {rkey: string; title: string; publishedAt: string; tag: string | null; minutes: number}
+type LatestPost = {rkey: string; title: string; publishedAt: string}
+type LatestPhoto = {thumb: string; alt: string; createdAt: string}
 
-// Tiga tulisan terbaru untuk preview di beranda. getPosts sudah di-cache Redis (60 dtk),
-// jadi tidak menambah beban berarti. Kalau gagal, bagian ini disembunyikan saja.
-export const loader = async () => {
+// Tulisan terbaru. getPosts sudah di-cache Redis (60 dtk). Gagal -> null, kartunya jatuh ke tautan biasa.
+async function getLatestPost(): Promise<LatestPost | null> {
   try {
     const posts = await getPosts(undefined)
-    const latest: LatestPost[] = posts
-      .map(p => ({
-        rkey: p.rkey,
-        title: String(p.title),
-        publishedAt: p.publishedAt,
-        tag: p.tags?.[0] ?? null,
-        minutes: estimateReadingMinutes(p),
-      }))
+    const [first] = posts
+      .map(p => ({rkey: p.rkey, title: String(p.title), publishedAt: p.publishedAt}))
       .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
-      .slice(0, 3)
-    return json({latest})
+    return first ?? null
   } catch (err) {
-    console.error('Home loader error:', err)
-    return json({latest: [] as LatestPost[]})
+    console.error('Home latest post error:', err)
+    return null
   }
+}
+
+// Foto terbaru dari Gallery. Urutan: cache Gallery -> cache khusus -> ambil langsung dari Bluesky
+// (cuma ~2 request, timeout 4 dtk, lalu di-cache 10 menit) supaya beranda tidak ikut lambat.
+const HANDLE = 'mutho.my.id'
+const wsrv = (url: string, w: number, q: number) =>
+  `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${w}&q=${q}&output=webp&we=1`
+
+async function getLatestPhoto(): Promise<LatestPhoto | null> {
+  try {
+    const gallery = await getCachedGallery<{posts: {images: {thumb: string; alt: string}[]; createdAt: string}[]}>()
+    const first = gallery?.posts?.[0]
+    if (first?.images?.[0]) return {thumb: first.images[0].thumb, alt: first.images[0].alt, createdAt: first.createdAt}
+
+    const cached = await getCachedLatestPhoto<LatestPhoto>()
+    if (cached) return cached
+
+    const t = () => ({signal: AbortSignal.timeout(4000)})
+    const {did} = await (await fetch(`https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle=${HANDLE}`, t())).json()
+    const list = await (
+      await fetch(
+        `https://bsky.social/xrpc/com.atproto.repo.listRecords?repo=${did}&collection=app.photosky.postMeta&limit=6&reverse=true`,
+        t(),
+      )
+    ).json()
+    for (const meta of list.records ?? []) {
+      const rkey = String(meta.uri).split('/').pop()
+      const res = await fetch(
+        `https://bsky.social/xrpc/com.atproto.repo.getRecord?repo=${did}&collection=app.bsky.feed.post&rkey=${rkey}`,
+        t(),
+      )
+      if (!res.ok) continue
+      const {value} = await res.json()
+      const img = (value?.embed?.images ?? value?.embed?.media?.images ?? []).find((i: any) => i?.image?.ref?.$link)
+      if (!img) continue
+      const blobUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${img.image.ref.$link}`
+      const photo: LatestPhoto = {
+        thumb: wsrv(blobUrl, 480, 60),
+        alt: img.alt ?? '',
+        createdAt: value.createdAt ?? meta.value?.createdAt,
+      }
+      await setCachedLatestPhoto(photo)
+      return photo
+    }
+    return null
+  } catch (err) {
+    console.error('Home latest photo error:', err)
+    return null
+  }
+}
+
+export const loader = async () => {
+  const [post, photo] = await Promise.all([getLatestPost(), getLatestPhoto()])
+  return json({post, photo})
 }
 
 const INTERESTS = ['coffee', 'manga', 'anime', 'movies', 'books', 'JRPGs', 'philosophy', 'psychology']
 
 export default function About() {
-  const {latest} = useLoaderData<typeof loader>()
+  const {post, photo} = useLoaderData<typeof loader>()
 
   return (
     <div className="flex" style={{minHeight: 'calc(100vh - 52px - 48px)'}}>
@@ -76,11 +124,8 @@ export default function About() {
           {/* Now playing — di HP tampil di sini (di desktop sudah ada di sidebar kanan) */}
           <NowPlayingCard className="lg:hidden mb-6" />
 
-          {/* Kartu navigasi — pengganti sidebar "Explore" yang tersembunyi di HP */}
-          <div className="grid grid-cols-2 gap-2.5 mb-8 lg:hidden">
-            <NavTile to="/blog" title="Writing →" hint="latest posts" icon="blog" />
-            <NavTile to="/gallery" title="Gallery →" hint="photos & moments" icon="gallery" />
-          </div>
+          {/* Dua kartu atas (HP): tulisan terbaru & foto terbaru. Sekaligus jadi jalan pintas ke Writing/Gallery. */}
+          <HomeTiles post={post} photo={photo} />
 
           <Section label="Work">
             <WorkItem index={0} company="Teacher" role="I love to learn & teach" period="2013 — Present" />
@@ -89,32 +134,6 @@ export default function About() {
           <Section label="Community">
             <WorkItem index={1} company="KIKEN" href="https://discord.gg/DNcNBQaqgM" role="Discord Server" period="Dec 2026 — Present" />
           </Section>
-
-          {latest.length > 0 && (
-            <section className="mb-4">
-              <div className="flex items-baseline justify-between mb-1">
-                <p className="font-mono text-[12px] tracking-[0.16em] uppercase text-[#8b8b93]">Latest writing</p>
-                <Link to="/blog" prefetch="intent" className="font-mono text-[12px] text-[#4a9eff] hover:text-[#7c6ff7] transition-colors">
-                  All →
-                </Link>
-              </div>
-              <ul className="border-t border-[#1a1a1a] divide-y divide-[#1a1a1a]">
-                {latest.map((post, i) => (
-                  <li key={post.rkey} className="fade-up-item" style={{'--delay': `${i * 0.06}s`} as CSSProperties}>
-                    <Link to={`/posts/${post.rkey}`} prefetch="intent" className="group block py-4">
-                      <h3 className="title-underline font-display text-[18px] sm:text-[20px] leading-snug text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors">
-                        {post.title}
-                      </h3>
-                      <p className="font-mono text-[11.5px] text-[#666] mt-1.5">
-                        {post.tag && <span className="uppercase tracking-[0.06em]">{post.tag} · </span>}
-                        {post.minutes} min read · {formatDate(post.publishedAt)}
-                      </p>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
         </div>
       </div>
 
@@ -195,7 +214,7 @@ function Hero() {
           <h1 className="font-display text-[34px] sm:text-[42px] leading-[1.1] text-[#f0f0f0] tracking-[-0.02em]">
             Mutho<span className="text-[#4a9eff]">.</span>
           </h1>
-          <p className="font-mono text-[13px] text-[#8b8b93] mt-1.5">guru &amp; murid abadi</p>
+          <p className="font-mono text-[13px] text-[#8b8b93] mt-1.5">A Vagabond</p>
           {statusMeta && (
             <p className="font-mono text-[12px] text-[#8b8b93] mt-2 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full shrink-0" style={{background: statusMeta.color}} />
@@ -244,7 +263,52 @@ function activityVerb(type: number): string {
   }
 }
 
-/* ── Kartu navigasi (HP) ── */
+/* ── Kartu tulisan terbaru + foto terbaru (HP) ── */
+
+function HomeTiles({post, photo}: {post: LatestPost | null; photo: LatestPhoto | null}) {
+  const cardCls = 'relative block h-[168px] rounded-2xl border border-[#1e1e1e] bg-[#111111] overflow-hidden transition-transform active:scale-[0.98]'
+  return (
+    <div className="grid grid-cols-2 gap-2.5 mb-8 lg:hidden">
+      {post ? (
+        <Link to={`/posts/${post.rkey}`} prefetch="intent" className={`${cardCls} p-3.5 flex flex-col justify-between`}>
+          <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#4a9eff]">Latest writing</span>
+          <div>
+            <h3 className="font-display text-[18px] leading-snug text-[#f0f0f0] line-clamp-4">{post.title}</h3>
+            <p className="font-mono text-[11px] text-[#666] mt-2">{formatDate(post.publishedAt)}</p>
+          </div>
+        </Link>
+      ) : (
+        <NavTile to="/blog" title="Writing →" hint="latest posts" icon="blog" />
+      )}
+
+      {photo ? (
+        <Link to="/gallery" prefetch="intent" className={cardCls} aria-label="Gallery — latest photo">
+          <img
+            src={photo.thumb}
+            alt={photo.alt || 'Latest photo from the gallery'}
+            decoding="async"
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+          <span
+            className="absolute top-3 left-3.5 font-mono text-[10px] tracking-[0.16em] uppercase text-[#f0f0f0]"
+            style={{textShadow: '0 1px 6px rgba(0,0,0,0.7)'}}>
+            Latest photo
+          </span>
+          <div
+            className="absolute inset-x-0 bottom-0 p-3.5 pt-10"
+            style={{background: 'linear-gradient(to top, rgba(0,0,0,0.78), transparent)'}}>
+            <div className="font-mono text-[14px] text-[#f0f0f0]">Gallery →</div>
+            <div className="font-mono text-[11px] text-[#c9c9cf] mt-0.5">{formatDate(photo.createdAt)}</div>
+          </div>
+        </Link>
+      ) : (
+        <NavTile to="/gallery" title="Gallery →" hint="photos & moments" icon="gallery" />
+      )}
+    </div>
+  )
+}
+
+/* ── Kartu navigasi biasa (cadangan kalau data tulisan/foto tidak tersedia) ── */
 
 function NavTile({to, title, hint, icon}: {to: string; title: string; hint: string; icon: 'blog' | 'gallery'}) {
   return (
