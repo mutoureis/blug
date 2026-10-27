@@ -4,6 +4,8 @@ import type {CSSProperties} from 'react'
 import {getPosts} from '../../atproto/index.js'
 import {useLanyard, DISCORD_STATUS_META, DISCORD_USER_ID} from '../hooks/use-lanyard.js'
 import type {LanyardData} from '../hooks/use-lanyard.js'
+import type {LeafletDocument} from 'src/types'
+import {getDid} from '../../atproto/getDid.js'
 import {NowPlayingWidget, NowPlayingCard} from '../components/now-playing-widget.js'
 import {formatDate} from '../lib/post-utils.js'
 import {getCachedGallery, getCachedLatestPhoto, setCachedLatestPhoto} from '../../redis/redis.js'
@@ -13,17 +15,35 @@ export const meta: MetaFunction = () => [
   {name: 'description', content: 'About Mutho — hanya seorang guru dan murid abadi'},
 ]
 
-type LatestPost = {rkey: string; title: string; publishedAt: string}
+type LatestPost = {rkey: string; title: string; publishedAt: string; image: string | null}
 type LatestPhoto = {thumb: string; alt: string; createdAt: string}
+
+// Gambar pertama di dalam sebuah tulisan: cover kalau ada, kalau tidak blok gambar pertama
+// (termasuk yang ada di dalam daftar). Pakai CDN Bluesky versi thumbnail supaya ringan.
+function findPostImage(post: LeafletDocument): string | null {
+  const cdn = (cid: string) => `https://cdn.bsky.app/img/feed_thumbnail/plain/${getDid()}/${cid}@jpeg`
+  const cover = post.coverImage?.ref?.$link
+  if (cover) return cdn(cover)
+  for (const page of post.content?.pages ?? []) {
+    for (const {block} of page.blocks) {
+      if (block.$type === 'pub.leaflet.blocks.image' && block.image?.ref?.$link) return cdn(block.image.ref.$link)
+      if (block.$type === 'pub.leaflet.blocks.list') {
+        for (const child of block.children.content) {
+          if (child.$type === 'pub.leaflet.blocks.image' && child.image?.ref?.$link) return cdn(child.image.ref.$link)
+        }
+      }
+    }
+  }
+  return null
+}
 
 // Tulisan terbaru. getPosts sudah di-cache Redis (60 dtk). Gagal -> null, kartunya jatuh ke tautan biasa.
 async function getLatestPost(): Promise<LatestPost | null> {
   try {
     const posts = await getPosts(undefined)
-    const [first] = posts
-      .map(p => ({rkey: p.rkey, title: String(p.title), publishedAt: p.publishedAt}))
-      .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
-    return first ?? null
+    const [first] = [...posts].sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+    if (!first) return null
+    return {rkey: first.rkey, title: String(first.title), publishedAt: first.publishedAt, image: findPostImage(first)}
   } catch (err) {
     console.error('Home latest post error:', err)
     return null
@@ -292,13 +312,31 @@ function HomeTiles({post, photo}: {post: LatestPost | null; photo: LatestPhoto |
   return (
     <div className="grid grid-cols-2 gap-2.5 mb-8 lg:hidden">
       {post ? (
-        <Link to={`/posts/${post.rkey}`} prefetch="intent" className={`${cardCls} p-3.5 flex flex-col justify-between`}>
-          <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#4a9eff]">Latest writing</span>
-          <div>
-            <h3 className="font-display text-[18px] leading-snug text-[#f0f0f0] line-clamp-4">{post.title}</h3>
-            <p className="font-mono text-[11px] text-[#666] mt-2">{formatDate(post.publishedAt)}</p>
-          </div>
-        </Link>
+        post.image ? (
+          // Tulisan terbaru punya gambar -> tampil seperti kartu foto: gambar penuh + judul di atas gradasi
+          <Link to={`/posts/${post.rkey}`} prefetch="intent" className={cardCls}>
+            <img src={post.image} alt="" decoding="async" className="absolute inset-0 w-full h-full object-cover" />
+            <span
+              className="absolute top-3 left-3.5 font-mono text-[10px] tracking-[0.16em] uppercase text-[#f0f0f0]"
+              style={{textShadow: '0 1px 6px rgba(0,0,0,0.7)'}}>
+              Latest writing
+            </span>
+            <div
+              className="absolute inset-x-0 bottom-0 p-3.5 pt-14"
+              style={{background: 'linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.45) 65%, transparent)'}}>
+              <h3 className="font-display text-[18px] leading-snug text-[#f0f0f0] line-clamp-3">{post.title}</h3>
+              <p className="font-mono text-[11px] text-[#c9c9cf] mt-1.5">{formatDate(post.publishedAt)}</p>
+            </div>
+          </Link>
+        ) : (
+          <Link to={`/posts/${post.rkey}`} prefetch="intent" className={`${cardCls} p-3.5 flex flex-col justify-between`}>
+            <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#4a9eff]">Latest writing</span>
+            <div>
+              <h3 className="font-display text-[18px] leading-snug text-[#f0f0f0] line-clamp-4">{post.title}</h3>
+              <p className="font-mono text-[11px] text-[#666] mt-2">{formatDate(post.publishedAt)}</p>
+            </div>
+          </Link>
+        )
       ) : (
         <NavTile to="/blog" title="Writing →" hint="latest posts" icon="blog" />
       )}
