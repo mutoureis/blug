@@ -14,7 +14,7 @@ import {
 } from 'src/types'
 import {getDid} from 'src/atproto/getDid'
 import {useRef} from 'react'
-import {Link} from '../components/link'
+import {Link as ExternalLink} from '../components/link'
 import {BskyEmbed} from '../components/bsky-embed'
 
 export const loader = async ({params}: LoaderFunctionArgs) => {
@@ -174,7 +174,7 @@ function renderRichText(text: string, facets?: LeafletFacet[]): React.ReactNode 
         case 'pub.leaflet.richtext.facet#italic': element = <em key={`i-${i}`}>{element}</em>; break
         case 'pub.leaflet.richtext.facet#strikethrough': element = <s key={`s-${i}`}>{element}</s>; break
         case 'pub.leaflet.richtext.facet#link':
-          element = <Link key={`l-${i}`} href={feature.uri} className="text-[#4a9eff] hover:text-[#7c6ff7] underline underline-offset-2">{element}</Link>; break
+          element = <ExternalLink key={`l-${i}`} href={feature.uri} className="text-[#4a9eff] hover:text-[#7c6ff7] underline underline-offset-2">{element}</ExternalLink>; break
         case 'pub.leaflet.richtext.facet#code':
           element = <code className="bg-[#1a1a1a] text-[#4a9eff] px-1.5 py-0.5 rounded text-[0.85em] font-mono border border-[#2a2a2a]">{element}</code>
       }
