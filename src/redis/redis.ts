@@ -98,3 +98,23 @@ export const setCachedGallery = async (data: unknown): Promise<void> => {
     console.error('setCachedGallery error:', err)
   }
 }
+
+// Foto terbaru untuk kartu di beranda (dipakai kalau cache Gallery lagi kosong).
+export const getCachedLatestPhoto = async <T>(): Promise<T | null> => {
+  try {
+    const res = await getClient().get('latest-photo')
+    if (!res) return null
+    return JSON.parse(res) as T
+  } catch (err) {
+    console.error('getCachedLatestPhoto error:', err)
+    return null
+  }
+}
+
+export const setCachedLatestPhoto = async (data: unknown): Promise<void> => {
+  try {
+    await getClient().set('latest-photo', JSON.stringify(data), 'EX', 60 * 10)
+  } catch (err) {
+    console.error('setCachedLatestPhoto error:', err)
+  }
+}
