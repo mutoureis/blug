@@ -307,6 +307,12 @@ function activityVerb(type: number): string {
 
 /* ── Kartu tulisan terbaru + foto terbaru (HP) ── */
 
+// Gambar di kartu diredupkan (filter + lapisan gelap, makin gelap ke bawah) supaya teks putih selalu terbaca,
+// bahkan di atas gambar yang sangat terang (mis. panel manga putih).
+const IMG_DIM = {filter: 'brightness(0.72) saturate(0.9)'}
+const DIM_OVERLAY = {background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.62) 50%, rgba(0,0,0,0.48) 100%)'}
+const TEXT_SHADOW = {textShadow: '0 1px 8px rgba(0,0,0,0.65)'}
+
 function HomeTiles({post, photo}: {post: LatestPost | null; photo: LatestPhoto | null}) {
   const cardCls = 'relative block h-[168px] rounded-2xl border border-[#1e1e1e] bg-[#111111] overflow-hidden transition-transform active:scale-[0.98]'
   return (
@@ -315,17 +321,16 @@ function HomeTiles({post, photo}: {post: LatestPost | null; photo: LatestPhoto |
         post.image ? (
           // Tulisan terbaru punya gambar -> tampil seperti kartu foto: gambar penuh + judul di atas gradasi
           <Link to={`/posts/${post.rkey}`} prefetch="intent" className={cardCls}>
-            <img src={post.image} alt="" decoding="async" className="absolute inset-0 w-full h-full object-cover" />
+            <img src={post.image} alt="" decoding="async" className="absolute inset-0 w-full h-full object-cover" style={IMG_DIM} />
+            <div className="absolute inset-0" style={DIM_OVERLAY} aria-hidden="true" />
             <span
               className="absolute top-3 left-3.5 font-mono text-[10px] tracking-[0.16em] uppercase text-[#f0f0f0]"
               style={{textShadow: '0 1px 6px rgba(0,0,0,0.7)'}}>
               Latest writing
             </span>
-            <div
-              className="absolute inset-x-0 bottom-0 p-3.5 pt-14"
-              style={{background: 'linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.45) 65%, transparent)'}}>
-              <h3 className="font-display text-[18px] leading-snug text-[#f0f0f0] line-clamp-3">{post.title}</h3>
-              <p className="font-mono text-[11px] text-[#c9c9cf] mt-1.5">{formatDate(post.publishedAt)}</p>
+            <div className="absolute inset-x-0 bottom-0 p-3.5">
+              <h3 className="font-display text-[18px] leading-snug text-[#f0f0f0] line-clamp-3" style={TEXT_SHADOW}>{post.title}</h3>
+              <p className="font-mono text-[11px] text-[#d4d4da] mt-1.5" style={TEXT_SHADOW}>{formatDate(post.publishedAt)}</p>
             </div>
           </Link>
         ) : (
@@ -348,17 +353,17 @@ function HomeTiles({post, photo}: {post: LatestPost | null; photo: LatestPhoto |
             alt={photo.alt || 'Latest photo from the gallery'}
             decoding="async"
             className="absolute inset-0 w-full h-full object-cover"
+            style={IMG_DIM}
           />
+          <div className="absolute inset-0" style={DIM_OVERLAY} aria-hidden="true" />
           <span
             className="absolute top-3 left-3.5 font-mono text-[10px] tracking-[0.16em] uppercase text-[#f0f0f0]"
             style={{textShadow: '0 1px 6px rgba(0,0,0,0.7)'}}>
             Latest photo
           </span>
-          <div
-            className="absolute inset-x-0 bottom-0 p-3.5 pt-10"
-            style={{background: 'linear-gradient(to top, rgba(0,0,0,0.78), transparent)'}}>
-            <div className="font-mono text-[14px] text-[#f0f0f0]">Gallery →</div>
-            <div className="font-mono text-[11px] text-[#c9c9cf] mt-0.5">{formatDate(photo.createdAt)}</div>
+          <div className="absolute inset-x-0 bottom-0 p-3.5">
+            <div className="font-mono text-[14px] text-[#f0f0f0]" style={TEXT_SHADOW}>Gallery →</div>
+            <div className="font-mono text-[11px] text-[#d4d4da] mt-0.5" style={TEXT_SHADOW}>{formatDate(photo.createdAt)}</div>
           </div>
         </Link>
       ) : (
