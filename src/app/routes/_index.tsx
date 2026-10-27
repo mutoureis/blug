@@ -3,6 +3,7 @@ import {Link, useLoaderData} from '@remix-run/react'
 import type {CSSProperties} from 'react'
 import {getPosts} from '../../atproto/index.js'
 import {useLanyard, DISCORD_STATUS_META, DISCORD_USER_ID} from '../hooks/use-lanyard.js'
+import type {LanyardData} from '../hooks/use-lanyard.js'
 import {NowPlayingWidget, NowPlayingCard} from '../components/now-playing-widget.js'
 import {formatDate} from '../lib/post-utils.js'
 import {getCachedGallery, getCachedLatestPhoto, setCachedLatestPhoto} from '../../redis/redis.js'
@@ -78,15 +79,33 @@ async function getLatestPhoto(): Promise<LatestPhoto | null> {
   }
 }
 
+// Presence Discord diambil di SERVER lewat REST Lanyard, jadi avatar & status langsung ada di HTML pertama.
+// Dulu avatar baru muncul setelah halaman selesai dimuat + WebSocket tersambung (itu yang terasa lambat).
+// Timeout 1,5 dtk + cache memori 30 dtk supaya beranda tidak ikut tertahan kalau Lanyard lambat.
+let _presence: {at: number; data: LanyardData} | null = null
+async function getPresence(): Promise<LanyardData | null> {
+  if (_presence && Date.now() - _presence.at < 30_000) return _presence.data
+  try {
+    const res = await fetch(`https://api.lanyard.rest/v1/users/${DISCORD_USER_ID}`, {signal: AbortSignal.timeout(1500)})
+    if (!res.ok) return _presence?.data ?? null
+    const body = await res.json()
+    if (!body?.success) return _presence?.data ?? null
+    _presence = {at: Date.now(), data: body.data as LanyardData}
+    return _presence.data
+  } catch {
+    return _presence?.data ?? null
+  }
+}
+
 export const loader = async () => {
-  const [post, photo] = await Promise.all([getLatestPost(), getLatestPhoto()])
-  return json({post, photo})
+  const [post, photo, presence] = await Promise.all([getLatestPost(), getLatestPhoto(), getPresence()])
+  return json({post, photo, presence})
 }
 
 const INTERESTS = ['coffee', 'manga', 'anime', 'movies', 'books', 'JRPGs', 'philosophy', 'psychology']
 
 export default function About() {
-  const {post, photo} = useLoaderData<typeof loader>()
+  const {post, photo, presence} = useLoaderData<typeof loader>()
 
   return (
     <div className="flex" style={{minHeight: 'calc(100vh - 52px - 48px)'}}>
@@ -102,8 +121,8 @@ export default function About() {
 
       {/* ── Main Content ── */}
       <div className="flex-1 min-w-0 flex justify-center">
-        <div className="w-full max-w-3xl px-6 md:px-14 py-8 sm:py-10">
-          <Hero />
+        <div className="w-full max-w-3xl px-6 md:px-14 pt-8 pb-3 sm:py-10">
+          <Hero initial={presence as unknown as LanyardData | null} />
 
           <ul className="flex flex-wrap gap-1.5 mb-5" aria-label="Interests">
             {INTERESTS.map(tag => (
@@ -148,17 +167,20 @@ export default function About() {
 
 /* ── Hero: avatar bercincin + nama + status Discord live (Lanyard) ── */
 
-function Hero() {
-  const {data, status} = useLanyard()
+function Hero({initial}: {initial: LanyardData | null}) {
+  const live = useLanyard()
+  // Pakai data dari server dulu; begitu WebSocket tersambung, data live yang menggantikan.
+  const data = live.data ?? initial
+  const status = data ? 'ready' : live.status
   const statusMeta = data ? DISCORD_STATUS_META[data.discord_status] ?? DISCORD_STATUS_META.offline : null
 
   const avatarUrl = data?.discord_user.avatar
     ? `https://cdn.discordapp.com/avatars/${data.discord_user.id}/${data.discord_user.avatar}.${
         data.discord_user.avatar.startsWith('a_') ? 'gif' : 'png'
-      }?size=320`
+      }?size=256`
     : null
   const avatarDecorationUrl = data?.discord_user.avatar_decoration_data
-    ? `https://cdn.discordapp.com/avatar-decoration-presets/${data.discord_user.avatar_decoration_data.asset}.png?size=320`
+    ? `https://cdn.discordapp.com/avatar-decoration-presets/${data.discord_user.avatar_decoration_data.asset}.png?size=256`
     : null
 
   // Custom status (type 4) dan aktivitas lain (game/app). Spotify sudah punya kartu sendiri.
@@ -350,7 +372,7 @@ function NavTile({to, title, hint, icon}: {to: string; title: string; hint: stri
 
 function Section({label, children}: {label: string; children: React.ReactNode}) {
   return (
-    <section className="mb-7">
+    <section className="mb-7 last:mb-0">
       <p className="font-mono text-[12px] tracking-[0.16em] uppercase text-[#8b8b93] mb-3">{label}</p>
       <ul className="ml-[5px] border-l border-[#26262b] pl-[18px]">{children}</ul>
     </section>
