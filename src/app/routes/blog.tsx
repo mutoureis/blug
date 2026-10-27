@@ -8,17 +8,53 @@ import {LeafletDocument} from 'src/types'
 import {NowPlayingWidget} from '../components/now-playing-widget.js'
 import {estimateReadingMinutes, formatDate} from '../lib/post-utils.js'
 
+type SlimPost = {
+  rkey: string
+  title: string
+  publishedAt: string
+  tags: string[]
+  description?: string
+  readingMinutes: number
+  image: string | null
+}
+
+// Gambar pertama dalam tulisan: cover kalau ada, kalau tidak blok gambar pertama (termasuk di dalam daftar).
+// Pakai thumbnail CDN Bluesky supaya ringan.
+function findPostImage(post: LeafletDocument, did: string): string | null {
+  const cdn = (cid: string) => `https://cdn.bsky.app/img/feed_thumbnail/plain/${did}/${cid}@jpeg`
+  const cover = post.coverImage?.ref?.$link
+  if (cover) return cdn(cover)
+  for (const page of post.content?.pages ?? []) {
+    for (const {block} of page.blocks) {
+      if (block.$type === 'pub.leaflet.blocks.image' && block.image?.ref?.$link) return cdn(block.image.ref.$link)
+      if (block.$type === 'pub.leaflet.blocks.list') {
+        for (const child of block.children.content) {
+          if (child.$type === 'pub.leaflet.blocks.image' && child.image?.ref?.$link) return cdn(child.image.ref.$link)
+        }
+      }
+    }
+  }
+  return null
+}
+
 export const loader = async () => {
+  const did = getDid()
   try {
     const rawPosts = await getPosts(undefined)
-    const posts = rawPosts.map(p => ({
-      ...p,
+    // Kirim ke browser hanya yang dibutuhkan daftar (bukan seluruh isi tulisan) -> halaman Writing lebih ringan.
+    const posts: SlimPost[] = rawPosts.map(p => ({
+      rkey: p.rkey,
+      title: String(p.title),
+      publishedAt: p.publishedAt,
+      tags: p.tags ?? [],
       description: p.description?.slice(0, 180),
+      readingMinutes: estimateReadingMinutes(p),
+      image: findPostImage(p, did),
     }))
-    return json({posts, did: getDid()})
+    return json({posts, did})
   } catch (err) {
     console.error('Blog loader error:', err)
-    return json({posts: [], did: getDid()})
+    return json({posts: [] as SlimPost[], did})
   }
 }
 
@@ -35,12 +71,13 @@ type FeedEntry = {
   tags: string[]
   excerpt?: string
   readingMinutes?: number
+  image: string | null
 }
 
 type MonthGroup = {label: string; items: {entry: FeedEntry; index: number}[]}
 
 export default function Blog() {
-  const {posts} = useLoaderData<{posts: LeafletDocument[]; did: string}>()
+  const {posts} = useLoaderData<typeof loader>()
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const navigation = useNavigation()
@@ -55,7 +92,8 @@ export default function Blog() {
         date: new Date(p.publishedAt),
         tags: p.tags ?? [],
         excerpt: p.description,
-        readingMinutes: estimateReadingMinutes(p),
+        readingMinutes: p.readingMinutes,
+        image: p.image,
       }))
       .sort((a, b) => b.date.getTime() - a.date.getTime())
   }, [posts])
@@ -194,7 +232,7 @@ export default function Blog() {
               {groups.map(group => (
                 <section key={group.label} className="mb-3">
                   <p className="label mt-2 mb-1">{group.label}</p>
-                  <ul className="border-t border-[#1a1a1a] divide-y divide-[#1a1a1a]">
+                  <ul className="flex flex-col gap-3 mt-2">
                     {group.items.map(({entry, index}) => <FeedItem entry={entry} index={index} key={entry.key} />)}
                   </ul>
                 </section>
@@ -231,63 +269,120 @@ function TagChip({active, onClick, children}: {active: boolean; onClick: () => v
   )
 }
 
+// Gambar diredupkan (filter + lapisan gelap) supaya teks tetap terbaca di atas gambar seterang apa pun.
+const IMG_DIM = {filter: 'brightness(0.7) saturate(0.9)'}
+const SHADOW = {textShadow: '0 1px 8px rgba(0,0,0,0.65)'}
+
 function FeaturedCard({entry}: {entry: FeedEntry}) {
+  const img = entry.image
   return (
     <Link
       to={entry.href}
       prefetch="intent"
       className="group block rounded-[18px] p-px mb-7 fade-up-item"
       style={{background: 'linear-gradient(135deg, rgba(74,158,255,0.6), rgba(124,111,247,0.5), transparent 70%)'}}>
-      <div className="rounded-[17px] bg-[#101012] p-5">
-        <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#4a9eff]">Latest</span>
-        <h2 className="title-underline font-display text-[22px] md:text-[26px] leading-snug text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors mt-2">
-          {entry.title}
-        </h2>
-        {entry.excerpt && (
-          <p className="font-sans text-[14px] md:text-[15px] text-[#9a9aa2] leading-relaxed line-clamp-2 mt-2">
-            {entry.excerpt}
-          </p>
+      <div className={`relative overflow-hidden rounded-[17px] bg-[#101012] p-5 ${img ? 'min-h-[230px] flex flex-col justify-end' : ''}`}>
+        {img && (
+          <>
+            <img
+              src={img}
+              alt=""
+              decoding="async"
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+              style={IMG_DIM}
+            />
+            <div
+              className="absolute inset-0"
+              style={{background: 'linear-gradient(to top, rgba(10,10,12,0.93) 0%, rgba(10,10,12,0.7) 55%, rgba(10,10,12,0.5) 100%)'}}
+              aria-hidden="true"
+            />
+          </>
         )}
-        <p className="font-mono text-[11.5px] text-[#666] mt-3">
-          {entry.tags.length > 0 && <span className="uppercase tracking-[0.06em]">{entry.tags.join(' · ')} · </span>}
-          {entry.readingMinutes != null && <>{entry.readingMinutes} min read · </>}
-          {formatDate(entry.date)}
-        </p>
+        <div className="relative">
+          <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#4a9eff]" style={img ? SHADOW : undefined}>Latest</span>
+          <h2
+            className="title-underline font-display text-[22px] md:text-[26px] leading-snug text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors mt-2"
+            style={img ? SHADOW : undefined}>
+            {entry.title}
+          </h2>
+          {entry.excerpt && (
+            <p
+              className={`font-sans text-[14px] md:text-[15px] leading-relaxed line-clamp-2 mt-2 ${img ? 'text-[#c4c4cc]' : 'text-[#9a9aa2]'}`}
+              style={img ? SHADOW : undefined}>
+              {entry.excerpt}
+            </p>
+          )}
+          <p className={`font-mono text-[11.5px] mt-3 ${img ? 'text-[#a8a8b0]' : 'text-[#666]'}`} style={img ? SHADOW : undefined}>
+            {entry.tags.length > 0 && <span className="uppercase tracking-[0.06em]">{entry.tags.join(' · ')} · </span>}
+            {entry.readingMinutes != null && <>{entry.readingMinutes} min read · </>}
+            {formatDate(entry.date)}
+          </p>
+        </div>
       </div>
     </Link>
   )
 }
 
+// Tiap tulisan = satu kartu. Kalau ada gambar di dalamnya, gambar jadi latar yang diredupkan dan
+// makin gelap ke kiri (tempat teks), jadi gambarnya mengintip di kanan tanpa mengganggu bacaan.
 function FeedItem({entry, index}: {entry: FeedEntry; index: number}) {
+  const img = entry.image
   return (
     <li className="fade-up-item" style={{'--delay': `${Math.min(index, 8) * 0.06}s`} as CSSProperties}>
-      <Link to={entry.href} prefetch="intent" className="group block py-5">
-        <div className="flex items-baseline justify-between gap-4">
-          <h3 className="title-underline font-display text-[20px] md:text-[24px] text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors leading-snug">
-            {entry.title}
-          </h3>
-          <time
-            className="font-mono text-[13px] text-[#666] shrink-0"
-            dateTime={entry.date.toISOString()}>
-            {formatDate(entry.date, {month: 'short', day: 'numeric'})}
-          </time>
-        </div>
-        <div className="flex items-center gap-2 font-mono text-[13px] text-[#666] mt-1.5">
-          <span className="uppercase tracking-[0.06em] text-[11px] text-[#555]">
-            {entry.tags.length > 0 ? entry.tags.join(' · ') : 'Blog'}
-          </span>
-          {entry.readingMinutes != null && (
-            <>
-              <span className="text-[#333]">·</span>
-              <span className="text-[11px] text-[#555]">{entry.readingMinutes} min read</span>
-            </>
+      <Link
+        to={entry.href}
+        prefetch="intent"
+        className="group relative block overflow-hidden rounded-2xl border border-[#1c1c1f] bg-[#0f0f10] px-4 py-4 transition-colors hover:border-[#2c2c32]">
+        {img && (
+          <>
+            <img
+              src={img}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+              style={IMG_DIM}
+            />
+            <div
+              className="absolute inset-0"
+              style={{background: 'linear-gradient(90deg, rgba(10,10,12,0.94) 0%, rgba(10,10,12,0.8) 50%, rgba(10,10,12,0.5) 100%)'}}
+              aria-hidden="true"
+            />
+          </>
+        )}
+        <div className="relative">
+          <div className="flex items-baseline justify-between gap-4">
+            <h3
+              className="title-underline font-display text-[20px] md:text-[24px] text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors leading-snug"
+              style={img ? SHADOW : undefined}>
+              {entry.title}
+            </h3>
+            <time
+              className={`font-mono text-[13px] shrink-0 ${img ? 'text-[#a8a8b0]' : 'text-[#666]'}`}
+              style={img ? SHADOW : undefined}
+              dateTime={entry.date.toISOString()}>
+              {formatDate(entry.date, {month: 'short', day: 'numeric'})}
+            </time>
+          </div>
+          <div className="flex items-center gap-2 font-mono text-[13px] text-[#666] mt-1.5" style={img ? SHADOW : undefined}>
+            <span className={`uppercase tracking-[0.06em] text-[11px] ${img ? 'text-[#a0a0a8]' : 'text-[#555]'}`}>
+              {entry.tags.length > 0 ? entry.tags.join(' · ') : 'Blog'}
+            </span>
+            {entry.readingMinutes != null && (
+              <>
+                <span className="text-[#444]">·</span>
+                <span className={`text-[11px] ${img ? 'text-[#a0a0a8]' : 'text-[#555]'}`}>{entry.readingMinutes} min read</span>
+              </>
+            )}
+          </div>
+          {entry.excerpt && (
+            <p
+              className={`font-sans text-[15px] leading-relaxed line-clamp-2 mt-2 ${img ? 'text-[#c4c4cc]' : 'text-[#888]'}`}
+              style={img ? SHADOW : undefined}>
+              {entry.excerpt}
+            </p>
           )}
         </div>
-        {entry.excerpt && (
-          <p className="font-sans text-[15px] text-[#888] leading-relaxed line-clamp-2 mt-2">
-            {entry.excerpt}
-          </p>
-        )}
       </Link>
     </li>
   )
