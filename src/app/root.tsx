@@ -167,7 +167,7 @@ export function Layout({children}: {children: React.ReactNode}) {
         <script async src="https://embed.bsky.app/static/embed.js" />
       </head>
       <body
-        className="flex flex-col min-h-screen bg-[#0a0a0a] text-[#f0f0f0] antialiased font-sans pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))] sm:pb-0">
+        className="flex flex-col min-h-screen bg-[#0a0a0a] text-[#f0f0f0] antialiased font-sans pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] sm:pb-0">
         {/* Ambient gradient mesh, sits below the existing film-grain layer (tailwind.css body::before) */}
         <div className="bg-mesh" aria-hidden="true" />
 
@@ -223,16 +223,6 @@ export function Layout({children}: {children: React.ReactNode}) {
             {children}
           </main>
         </div>
-
-        {/* Footer */}
-        <footer className="border-t border-[#1a1a1a] px-8 py-3.5 flex items-center justify-between">
-          <span className="font-mono text-[12px] tracking-[0.12em] uppercase text-[#555]">Made on ATProto</span>
-          <a
-            href="https://github.com/mutho23/blug"
-            className="font-mono text-[16px] text-[#444] hover:text-[#4a9eff] transition-colors">
-            source
-          </a>
-        </footer>
 
         <ScrollRestoration />
         <Scripts />
