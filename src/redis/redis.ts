@@ -118,3 +118,23 @@ export const setCachedLatestPhoto = async (data: unknown): Promise<void> => {
     console.error('setCachedLatestPhoto error:', err)
   }
 }
+
+// Lagu terakhir yang terlihat sedang diputar di Spotify (cadangan untuk kartu "Last listened").
+export const getCachedLastListened = async <T>(): Promise<T | null> => {
+  try {
+    const res = await getClient().get('last-listened')
+    if (!res) return null
+    return JSON.parse(res) as T
+  } catch (err) {
+    console.error('getCachedLastListened error:', err)
+    return null
+  }
+}
+
+export const setCachedLastListened = async (data: unknown): Promise<void> => {
+  try {
+    await getClient().set('last-listened', JSON.stringify(data), 'EX', 60 * 60 * 24 * 30)
+  } catch (err) {
+    console.error('setCachedLastListened error:', err)
+  }
+}
