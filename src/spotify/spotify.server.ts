@@ -18,10 +18,13 @@
  * alternative to the same thing.)
  */
 
+import {getCachedLastListened, setCachedLastListened} from '../redis/redis.js'
+
 const AUTHORIZE_URL = 'https://accounts.spotify.com/authorize'
 
 const TOKEN_URL = 'https://accounts.spotify.com/api/token'
 const NOW_PLAYING_URL = 'https://api.spotify.com/v1/me/player/currently-playing'
+const RECENTLY_PLAYED_URL = 'https://api.spotify.com/v1/me/player/recently-played?limit=1'
 
 export type NowPlayingTrack = {
   song: string
@@ -31,10 +34,16 @@ export type NowPlayingTrack = {
   track_id: string
   is_playing: boolean
   timestamps: {start: number; end: number}
+  /** Posisi & durasi saat di-pause (supaya progress bar berhenti, bukan terus berjalan). */
+  progress_ms?: number
+  duration_ms?: number
+  /** Diisi untuk "terakhir didengar" (tidak ada yang sedang diputar): kapan lagu itu diputar (ms epoch). */
+  last_played_at?: number
 }
 
 /** Scopes: only enough to read what's currently playing. No write/control access. */
-const SCOPES = ['user-read-currently-playing', 'user-read-playback-state'].join(' ')
+// user-read-recently-played: untuk menampilkan lagu terakhir yang didengar saat tidak ada yang diputar.
+const SCOPES = ['user-read-currently-playing', 'user-read-playback-state', 'user-read-recently-played'].join(' ')
 
 /** Builds the URL to send the browser to for the one-time Spotify login/consent screen. */
 export function buildSpotifyAuthorizeUrl(redirectUri: string): string {
@@ -116,7 +125,7 @@ async function getAccessToken(): Promise<string> {
  * SPOTIFY_REFRESH_TOKEN, or `null` if nothing's playing (including private
  * sessions / podcasts / ads, which Spotify reports without track data).
  */
-export async function getNowPlaying(): Promise<NowPlayingTrack | null> {
+async function fetchCurrentlyPlaying(): Promise<NowPlayingTrack | null> {
   const accessToken = await getAccessToken()
 
   const res = await fetch(NOW_PLAYING_URL, {
@@ -154,5 +163,81 @@ export async function getNowPlaying(): Promise<NowPlayingTrack | null> {
     track_id: track.id,
     is_playing: Boolean(data.is_playing),
     timestamps: {start: now - progressMs, end: now - progressMs + durationMs},
+    progress_ms: progressMs,
+    duration_ms: durationMs,
   }
+}
+
+// ── "Terakhir didengar" ──────────────────────────────────────────────────────────────
+// Urutan: lagu yang sedang diputar/di-pause -> riwayat Spotify (recently-played, butuh scope baru)
+// -> lagu terakhir yang pernah terlihat sedang diputar (disimpan di Redis) sebagai cadangan.
+
+let lastListenedMem: {at: number; track: NowPlayingTrack | null} | null = null
+let lastRemembered: {id: string; at: number} | null = null
+
+async function fetchRecentlyPlayed(): Promise<NowPlayingTrack | null> {
+  const accessToken = await getAccessToken()
+  const res = await fetch(RECENTLY_PLAYED_URL, {headers: {Authorization: `Bearer ${accessToken}`}})
+  if (!res.ok) throw new Error(`recently-played ${res.status}`) // mis. 403 = scope belum diberikan
+  const data = await res.json()
+  const item = data?.items?.[0]
+  const t = item?.track as
+    | {id: string; name: string; artists: {name: string}[]; album: {name: string; images: {url: string}[]}}
+    | undefined
+  if (!t) return null
+  return {
+    song: t.name,
+    artist: t.artists.map(a => a.name).join(', '),
+    album: t.album.name,
+    album_art_url: t.album.images[0]?.url ?? '',
+    track_id: t.id,
+    is_playing: false,
+    timestamps: {start: 0, end: 0},
+    last_played_at: item.played_at ? Date.parse(item.played_at) : undefined,
+  }
+}
+
+async function getLastListened(): Promise<NowPlayingTrack | null> {
+  // Cache memori 60 dtk: pengunjung polling tiap 7 dtk, jangan sampai tiap polling memanggil Spotify lagi.
+  if (lastListenedMem && Date.now() - lastListenedMem.at < 60_000) return lastListenedMem.track
+  let track: NowPlayingTrack | null = null
+  try {
+    track = await fetchRecentlyPlayed()
+  } catch {
+    // scope belum diberikan / Spotify error -> pakai cadangan dari Redis
+  }
+  if (!track) track = await getCachedLastListened<NowPlayingTrack>()
+  lastListenedMem = {at: Date.now(), track}
+  return track
+}
+
+async function rememberTrack(t: NowPlayingTrack): Promise<void> {
+  const now = Date.now()
+  // Tulis ke Redis hanya kalau lagunya ganti atau sudah >5 menit sejak tulis terakhir.
+  if (lastRemembered && lastRemembered.id === t.track_id && now - lastRemembered.at < 5 * 60_000) return
+  lastRemembered = {id: t.track_id, at: now}
+  await setCachedLastListened({
+    song: t.song,
+    artist: t.artist,
+    album: t.album,
+    album_art_url: t.album_art_url,
+    track_id: t.track_id,
+    is_playing: false,
+    timestamps: {start: 0, end: 0},
+    last_played_at: now,
+  } satisfies NowPlayingTrack)
+}
+
+/**
+ * Lagu yang sedang diputar (is_playing: true), sedang di-pause (is_playing: false + progress_ms),
+ * atau — kalau tidak ada sesi sama sekali — lagu terakhir yang didengar (is_playing: false + last_played_at).
+ * `null` hanya kalau belum ada data apa pun.
+ */
+export async function getNowPlaying(): Promise<NowPlayingTrack | null> {
+  const current = await fetchCurrentlyPlaying()
+  if (current) {
+    if (current.is_playing) await rememberTrack(current)
+    return current
+  }
+  return getLastListened()
 }
