@@ -154,7 +154,7 @@ export default function Blog() {
 
       {/* ── Main Content ── */}
       <div className="flex-1 min-w-0 flex justify-center">
-        <div className="w-full max-w-3xl px-8 md:px-14 py-10">
+        <div className="w-full max-w-3xl px-8 md:px-14 pt-10 pb-4 sm:pb-10">
 
           {/* Hero */}
           <section className="mb-6">

@@ -458,7 +458,7 @@ export default function Gallery() {
       <aside className="hidden lg:block w-[220px] shrink-0" />
 
       {/* ── Main Content ── */}
-      <div className="flex-1 px-6 md:px-14 py-8 min-w-0">
+      <div className="flex-1 px-6 md:px-14 pt-8 pb-3 sm:pb-8 min-w-0">
         {lightboxPost && (
           <Lightbox
             images={lightboxPost.images}
