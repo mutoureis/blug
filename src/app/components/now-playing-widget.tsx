@@ -2,10 +2,15 @@ import {useSpotifyNowPlaying} from '../hooks/use-spotify-now-playing.js'
 import {SpotifyCard, SpotifyCompactCard} from './spotify-card.js'
 
 /**
- * Sidebar variant: renders a labeled "Now playing" block only while a track
- * is actually playing (or briefly while still loading) — hides itself
- * entirely instead of showing an idle placeholder when nothing's playing.
+ * Sidebar variant: blok berlabel "Now playing" saat ada lagu diputar, "Paused" saat di-pause, dan
+ * "Last listened" (lagu terakhir) saat tidak ada yang diputar. Baru hilang kalau belum ada data sama sekali.
  */
+/** Judul blok sesuai keadaan: sedang diputar / di-pause / terakhir didengar. */
+function nowPlayingHeading(track: {is_playing: boolean; progress_ms?: number} | null): string {
+  if (!track || track.is_playing) return 'Now playing'
+  return track.progress_ms != null ? 'Paused' : 'Last listened'
+}
+
 export function NowPlayingWidget({className = ''}: {className?: string}) {
   const {track, status} = useSpotifyNowPlaying()
 
@@ -14,7 +19,7 @@ export function NowPlayingWidget({className = ''}: {className?: string}) {
 
   return (
     <div className={className}>
-      <p className="font-mono text-xs tracking-[0.14em] uppercase text-[#666] mb-3">Now playing</p>
+      <p className="font-mono text-xs tracking-[0.14em] uppercase text-[#666] mb-3">{nowPlayingHeading(track)}</p>
       {status === 'loading' ? (
         <div className="skeleton-line h-[68px] rounded-xl" aria-hidden="true" />
       ) : (
