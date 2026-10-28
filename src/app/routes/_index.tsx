@@ -122,6 +122,7 @@ export const loader = async () => {
   return json({post, photo, presence})
 }
 
+const LANGUAGES = ['Indonesian', 'English', 'Turkish', 'Arabic']
 const INTERESTS = ['coffee', 'manga', 'anime', 'movies', 'books', 'JRPGs', 'philosophy', 'psychology']
 
 export default function About() {
@@ -166,13 +167,37 @@ export default function About() {
           {/* Dua kartu atas (HP): tulisan terbaru & foto terbaru. Sekaligus jadi jalan pintas ke Writing/Gallery. */}
           <HomeTiles post={post} photo={photo} />
 
-          <Section label="Work">
-            <WorkItem index={0} company="Teacher" role="I love to learn & teach" period="2013 — Present" />
+          <Section label="Work Experience">
+            <WorkItem index={0} company="Arabic Teacher" period="2023 — Present" />
+            <WorkItem index={1} company="Turkish Teacher" period="2022 — 2023" />
+            <WorkItem index={2} company="Web Developer" period="2018 — 2022" />
+            <WorkItem index={3} company="IT Support" period="2016 — 2018" />
+            <WorkItem index={4} company="Accountant" period="2015 — 2016" />
+            <WorkItem index={5} company="Turkish - Indonesian Translator" period="2013 — 2015" />
+          </Section>
+
+          <Section label="Education">
+            <WorkItem index={6} company="Universitas Jambi" period="2018 — 2022" />
+            <WorkItem index={7} company="Sulaimaniyah Boarding School" role="Istanbul, Turkey" period="2009 — 2013" />
           </Section>
 
           <Section label="Community">
-            <WorkItem index={1} company="KIKEN" href="https://discord.gg/DNcNBQaqgM" role="Discord Server" period="Dec 2026 — Present" />
+            <WorkItem index={8} company="KIKEN" href="https://discord.gg/DNcNBQaqgM" role="Discord Server" period="Dec 2026 — Present" />
           </Section>
+
+          <section className="mb-7 last:mb-0">
+            <p className="font-mono text-[12px] tracking-[0.16em] uppercase text-[#8b8b93] mb-3">Languages</p>
+            <ul className="flex flex-wrap gap-1.5">
+              {LANGUAGES.map(lang => (
+                <li
+                  key={lang}
+                  className="font-mono text-[13px] text-[#cfcfd6] rounded-full border border-[#1e1e1e] px-3 py-1.5"
+                  style={{background: 'rgba(255,255,255,0.04)'}}>
+                  {lang}
+                </li>
+              ))}
+            </ul>
+          </section>
         </div>
       </div>
 
@@ -431,7 +456,7 @@ function WorkItem({
 }: {
   company: string
   href?: string
-  role: string
+  role?: string
   period: string
   index?: number
 }) {
@@ -451,7 +476,7 @@ function WorkItem({
           className={`title-underline font-mono text-[17px] sm:text-[19px] text-[#f0f0f0] ${href ? 'hover:text-[#4a9eff] transition-colors' : ''}`}>
           {company}
         </a>
-        <div className="font-sans text-[13px] sm:font-mono sm:text-[14px] text-[#8b8b93] mt-1">{role}</div>
+        {role && <div className="font-sans text-[13px] sm:font-mono sm:text-[14px] text-[#8b8b93] mt-1">{role}</div>}
       </div>
       {/* Di HP periode pindah ke bawah judul (tidak berebut ruang); di sm+ kembali rata kanan */}
       <span className="block font-mono text-[11.5px] text-[#4a9eff] mt-1 sm:mt-0.5 sm:text-[15px] sm:text-[#aaaaaa] shrink-0">
