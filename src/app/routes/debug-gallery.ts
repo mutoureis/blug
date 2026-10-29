@@ -57,7 +57,3 @@ export const loader = async () => {
     viaBskySocial: {status: viaBskySocial.status, records: viaBskySocial.body?.records?.length ?? null, error: viaBskySocial.body?.error ?? null},
   }, {headers: {'Cache-Control': 'no-store'}})
 }
-
-export default function DebugGallery() {
-  return null
-}
