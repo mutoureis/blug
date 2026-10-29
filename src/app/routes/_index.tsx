@@ -8,6 +8,7 @@ import type {LeafletDocument} from 'src/types'
 import {getDid} from '../../atproto/getDid.js'
 import {NowPlayingWidget, NowPlayingCard} from '../components/now-playing-widget.js'
 import {formatDate} from '../lib/post-utils.js'
+import {fetchZeensPhotos} from '../lib/zeens.server.js'
 import {getCachedGallery, getCachedLatestPhoto, setCachedLatestPhoto} from '../../redis/redis.js'
 
 export const meta: MetaFunction = () => [
@@ -50,12 +51,8 @@ async function getLatestPost(): Promise<LatestPost | null> {
   }
 }
 
-// Foto terbaru dari Gallery. Urutan: cache Gallery -> cache khusus -> ambil langsung dari Bluesky
-// (cuma ~2 request, timeout 4 dtk, lalu di-cache 10 menit) supaya beranda tidak ikut lambat.
-const HANDLE = 'mutho.my.id'
-const wsrv = (url: string, w: number, q: number) =>
-  `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${w}&q=${q}&output=webp&we=1`
-
+// Foto terbaru dari Gallery. Urutan: cache Gallery -> cache khusus -> ambil langsung dari PDS
+// (hanya halaman pertama, lalu di-cache 10 menit) supaya beranda tidak ikut lambat.
 async function getLatestPhoto(): Promise<LatestPhoto | null> {
   try {
     const gallery = await getCachedGallery<{posts: {images: {thumb: string; alt: string}[]; createdAt: string}[]}>()
@@ -65,34 +62,12 @@ async function getLatestPhoto(): Promise<LatestPhoto | null> {
     const cached = await getCachedLatestPhoto<LatestPhoto>()
     if (cached) return cached
 
-    const t = () => ({signal: AbortSignal.timeout(4000)})
-    const {did} = await (await fetch(`https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle=${HANDLE}`, t())).json()
-    const list = await (
-      await fetch(
-        `https://bsky.social/xrpc/com.atproto.repo.listRecords?repo=${did}&collection=app.photosky.postMeta&limit=6&reverse=true`,
-        t(),
-      )
-    ).json()
-    for (const meta of list.records ?? []) {
-      const rkey = String(meta.uri).split('/').pop()
-      const res = await fetch(
-        `https://bsky.social/xrpc/com.atproto.repo.getRecord?repo=${did}&collection=app.bsky.feed.post&rkey=${rkey}`,
-        t(),
-      )
-      if (!res.ok) continue
-      const {value} = await res.json()
-      const img = (value?.embed?.images ?? value?.embed?.media?.images ?? []).find((i: any) => i?.image?.ref?.$link)
-      if (!img) continue
-      const blobUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${img.image.ref.$link}`
-      const photo: LatestPhoto = {
-        thumb: wsrv(blobUrl, 480, 60),
-        alt: img.alt ?? '',
-        createdAt: value.createdAt ?? meta.value?.createdAt,
-      }
-      await setCachedLatestPhoto(photo)
-      return photo
-    }
-    return null
+    const {posts} = await fetchZeensPhotos({maxPosts: 6})
+    const p = posts[0]
+    if (!p?.images[0]) return null
+    const photo: LatestPhoto = {thumb: p.images[0].thumb, alt: p.images[0].alt, createdAt: p.createdAt}
+    await setCachedLatestPhoto(photo)
+    return photo
   } catch (err) {
     console.error('Home latest photo error:', err)
     return null

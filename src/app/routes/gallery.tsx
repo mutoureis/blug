@@ -4,178 +4,30 @@ import {useState, useEffect, useCallback, useMemo, useRef} from 'react'
 import type {CSSProperties} from 'react'
 import {getCachedGallery, setCachedGallery} from '../../redis/redis.js'
 import {formatDate} from '../lib/post-utils.js'
-
-const HANDLE = 'mutho.my.id'
-const THUMB_W = 480
-const THUMB_Q = 60
-const FULL_W  = 1200
-const FULL_Q  = 80
-
-function wsrv(url: string, w: number, q: number) {
-  return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${w}&q=${q}&output=webp&we=1`
-}
-
-let _did: string | null = null
-let _didAt = 0
-async function resolveDid() {
-  if (_did && Date.now() - _didAt < 3_600_000) return _did
-  const res = await fetch(`https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle=${HANDLE}`)
-  const {did} = await res.json()
-  _did = did; _didAt = Date.now()
-  return did
-}
-
-// Jalankan `fn` untuk tiap item dengan paling banyak `limit` request berbarengan,
-// supaya ratusan getRecord tidak menghantam Bluesky sekaligus.
-async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length)
-  let next = 0
-  const workers = Array.from({length: Math.min(limit, items.length)}, async () => {
-    while (next < items.length) {
-      const i = next++
-      out[i] = await fn(items[i])
-    }
-  })
-  await Promise.all(workers)
-  return out
-}
-
-type ImageItem = {thumb: string; full: string; width: number; height: number; alt: string}
-type PhotoPost = {images: ImageItem[]; createdAt: string}
-
-// fetch + coba ulang sekali kalau kena rate limit (429) / error server (5xx) / timeout.
-// Setiap kegagalan dicatat di log Vercel (cari "[gallery]") supaya penyebabnya kelihatan.
-async function fetchJson(url: string, label: string): Promise<any | null> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await fetch(url, {signal: AbortSignal.timeout(8000)})
-      if (res.ok) return await res.json()
-      console.error(`[gallery] ${label} -> HTTP ${res.status}`)
-      if (res.status !== 429 && res.status < 500) return null
-    } catch (err) {
-      console.error(`[gallery] ${label} gagal:`, (err as Error).message)
-    }
-    await new Promise(r => setTimeout(r, 500 * (attempt + 1)))
-  }
-  return null
-}
-
-// Zeens nyimpen foto sebagai post Bluesky biasa (app.bsky.feed.post + embed app.bsky.embed.images,
-// bisa lebih dari 1 foto per post), dan nempelin sidecar record app.photosky.postMeta (rkey sama
-// persis). Jadi: list dulu semua postMeta buat dapetin daftar rkey, lalu ambil post aslinya
-// BERKELOMPOK (25 post per request lewat app.bsky.feed.getPosts) — bukan satu-satu.
-// Dulu: 1 request per post (bisa ratusan) -> gampang kena rate limit Bluesky -> galeri kosong.
-// Sekarang: maksimal ~5 request daftar + ~20 request batch.
-async function fetchZeensPhotos(did: string): Promise<{posts: PhotoPost[]; failed: boolean}> {
-  const rkeys: string[] = []
-  let cursor: string | undefined
-  let listFailed = false
-  for (let page = 0; page < 5; page++) {
-    const url = new URL('https://bsky.social/xrpc/com.atproto.repo.listRecords')
-    url.searchParams.set('repo', did)
-    url.searchParams.set('collection', 'app.photosky.postMeta')
-    url.searchParams.set('limit', '100')
-    url.searchParams.set('reverse', 'true') // terbaru dulu
-    if (cursor) url.searchParams.set('cursor', cursor)
-    const data = await fetchJson(url.toString(), 'listRecords')
-    if (!data) {
-      if (page === 0) listFailed = true
-      break
-    }
-    const records: any[] = data.records ?? []
-    for (const rec of records) {
-      const rkey = String(rec.uri).split('/').pop()
-      if (rkey) rkeys.push(rkey)
-    }
-    if (!data.cursor || records.length === 0) break
-    cursor = data.cursor
-  }
-  if (rkeys.length === 0) return {posts: [], failed: listFailed}
-
-  const chunks: string[][] = []
-  for (let i = 0; i < rkeys.length; i += 25) chunks.push(rkeys.slice(i, i + 25))
-  const batches = await mapPool(chunks, 4, async chunk => {
-    const qs = chunk.map(r => `uris=${encodeURIComponent(`at://${did}/app.bsky.feed.post/${r}`)}`).join('&')
-    const data = await fetchJson(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPosts?${qs}`, 'getPosts')
-    return (data?.posts ?? []) as any[]
-  })
-
-  let posts = batches
-    .flat()
-    .map((post: any): PhotoPost | null => {
-      const embed = post?.embed
-      const embedImages: any[] = embed?.images ?? embed?.media?.images ?? []
-      const images: ImageItem[] = embedImages
-        .filter(img => img?.fullsize)
-        .map(img => ({
-          thumb: wsrv(img.fullsize, THUMB_W, THUMB_Q),
-          full: wsrv(img.fullsize, FULL_W, FULL_Q),
-          width: img.aspectRatio?.width ?? 1,
-          height: img.aspectRatio?.height ?? 1,
-          alt: img.alt ?? '',
-        }))
-      if (images.length === 0) return null
-      return {images, createdAt: post.record?.createdAt ?? post.indexedAt}
-    })
-    .filter((p): p is PhotoPost => p !== null)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-
-  // Cadangan: kalau batch getPosts tidak menghasilkan apa-apa, ambil 60 post terbaru satu-satu lewat
-  // getRecord (jalur yang sama dengan kartu "Latest photo" di beranda).
-  if (posts.length === 0) {
-    console.error('[gallery] getPosts kosong, mencoba getRecord satu-satu')
-    const results = await mapPool(rkeys.slice(0, 60), 6, async (rkey): Promise<PhotoPost | null> => {
-      const data = await fetchJson(
-        `https://bsky.social/xrpc/com.atproto.repo.getRecord?repo=${did}&collection=app.bsky.feed.post&rkey=${rkey}`,
-        'getRecord',
-      )
-      const value = data?.value
-      const embedImages: any[] = value?.embed?.images ?? value?.embed?.media?.images ?? []
-      const images: ImageItem[] = embedImages
-        .filter(img => img?.image?.ref?.$link)
-        .map(img => {
-          const blobUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${img.image.ref.$link}`
-          return {
-            thumb: wsrv(blobUrl, THUMB_W, THUMB_Q),
-            full: wsrv(blobUrl, FULL_W, FULL_Q),
-            width: img.aspectRatio?.width ?? 1,
-            height: img.aspectRatio?.height ?? 1,
-            alt: img.alt ?? '',
-          }
-        })
-      if (images.length === 0) return null
-      return {images, createdAt: value.createdAt}
-    })
-    posts = results
-      .filter((p): p is PhotoPost => p !== null)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-  }
-
-  // Ada daftar rkey tapi tidak satu pun foto berhasil diambil = kegagalan (bukan galeri kosong)
-  return {posts, failed: posts.length === 0}
-}
+import {fetchZeensPhotos} from '../lib/zeens.server.js'
+import type {ImageItem, PhotoPost} from '../lib/zeens.server.js'
 
 export const loader = async () => {
   const headers = {
-    Link: '<https://wsrv.nl>; rel=preconnect, <https://bsky.social>; rel=preconnect',
+    Link: '<https://wsrv.nl>; rel=preconnect',
     'Cache-Control': 'public, max-age=60, stale-while-revalidate=600',
   }
 
-  // Hasil di-cache di Redis 10 menit (hanya hasil yang berhasil).
+  // Hasil di-cache di Redis 10 menit supaya tiap kunjungan tidak memicu puluhan request ke PDS.
   const cached = await getCachedGallery<{posts: PhotoPost[]; did: string}>()
-  if (cached && cached.posts?.length) return json({...cached, failed: false}, {headers})
+  if (cached && cached.posts?.length > 0) return json(cached, {headers})
 
   try {
-    const did = await resolveDid()
-    const {posts, failed} = await fetchZeensPhotos(did)
-    if (posts.length > 0) await setCachedGallery({posts, did})
-    // Jangan biarkan browser menyimpan hasil gagal/kosong
-    return json({posts, did, failed}, {headers: posts.length > 0 ? headers : {...headers, 'Cache-Control': 'no-store'}})
+    const payload = await fetchZeensPhotos()
+    if (payload.posts.length > 0) await setCachedGallery(payload) // jangan cache hasil kosong
+    return json(payload, {headers})
   } catch (err) {
-    console.error('[gallery] loader gagal:', err)
-    return json({posts: [] as PhotoPost[], did: '', failed: true}, {headers: {...headers, 'Cache-Control': 'no-store'}})
+    // Dulu error ditelan diam-diam dan halaman cuma bilang "Belum ada foto". Sekarang masuk log.
+    console.error('[gallery] gagal mengambil foto:', err)
+    return json({posts: [] as PhotoPost[], did: '', pds: '', collections: [] as string[]}, {headers: {'Cache-Control': 'no-store'}})
   }
 }
+
 
 function Lightbox({images, initialIndex, onClose, dateLabel}: {images: ImageItem[]; initialIndex: number; onClose: () => void; dateLabel?: string}) {
   // images di sini cuma foto dari 1 post yang lagi dibuka — geser cuma jalan kalau post-nya
@@ -470,7 +322,7 @@ const PAGE_SIZE = 24
 type MonthGroup = {label: string; posts: PhotoPost[]}
 
 export default function Gallery() {
-  const {posts, failed} = useLoaderData<typeof loader>() as unknown as {posts: PhotoPost[]; did: string; failed?: boolean}
+  const {posts} = useLoaderData<typeof loader>() as unknown as {posts: PhotoPost[]; did: string}
   const [lightboxPost, setLightboxPost] = useState<PhotoPost | null>(null)
   const [year, setYear] = useState<string | null>(null)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
@@ -562,19 +414,7 @@ export default function Gallery() {
         )}
 
         {posts.length === 0 ? (
-          failed ? (
-            <div>
-              <p className="font-mono text-[17px] text-[#777]">Foto belum bisa dimuat sekarang.</p>
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                className="font-mono text-[13px] text-[#4a9eff] hover:text-[#7c6ff7] transition-colors mt-2">
-                Coba lagi
-              </button>
-            </div>
-          ) : (
-            <p className="font-mono text-[19px] text-[#555]">Belum ada foto.</p>
-          )
+          <p className="font-mono text-[19px] text-[#555]">Belum ada foto.</p>
         ) : (
           <>
             {groups.map(group => (
