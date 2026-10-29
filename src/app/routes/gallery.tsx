@@ -43,57 +43,84 @@ async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise
 type ImageItem = {thumb: string; full: string; width: number; height: number; alt: string}
 type PhotoPost = {images: ImageItem[]; createdAt: string}
 
+// fetch + coba ulang sekali kalau kena rate limit (429) / error server (5xx) / timeout.
+// Setiap kegagalan dicatat di log Vercel (cari "[gallery]") supaya penyebabnya kelihatan.
+async function fetchJson(url: string, label: string): Promise<any | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, {signal: AbortSignal.timeout(8000)})
+      if (res.ok) return await res.json()
+      console.error(`[gallery] ${label} -> HTTP ${res.status}`)
+      if (res.status !== 429 && res.status < 500) return null
+    } catch (err) {
+      console.error(`[gallery] ${label} gagal:`, (err as Error).message)
+    }
+    await new Promise(r => setTimeout(r, 500 * (attempt + 1)))
+  }
+  return null
+}
+
 // Zeens nyimpen foto sebagai post Bluesky biasa (app.bsky.feed.post + embed app.bsky.embed.images,
 // bisa lebih dari 1 foto per post), dan nempelin sidecar record app.photosky.postMeta (rkey sama
-// persis) buat data tambahan (warna, EXIF). Jadi: list dulu semua postMeta buat dapetin daftar rkey,
-// baru tarik post asli satu-satu buat ambil SEMUA foto di dalamnya.
-async function fetchZeensPhotos(did: string): Promise<PhotoPost[]> {
-  // Ambil semua record postMeta (paginated, dibatasin 5 halaman/±500 post biar aman)
-  const metaRecords: any[] = []
+// persis). Jadi: list dulu semua postMeta buat dapetin daftar rkey, lalu ambil post aslinya
+// BERKELOMPOK (25 post per request lewat app.bsky.feed.getPosts) — bukan satu-satu.
+// Dulu: 1 request per post (bisa ratusan) -> gampang kena rate limit Bluesky -> galeri kosong.
+// Sekarang: maksimal ~5 request daftar + ~20 request batch.
+async function fetchZeensPhotos(did: string): Promise<{posts: PhotoPost[]; failed: boolean}> {
+  const rkeys: string[] = []
   let cursor: string | undefined
+  let listFailed = false
   for (let page = 0; page < 5; page++) {
     const url = new URL('https://bsky.social/xrpc/com.atproto.repo.listRecords')
     url.searchParams.set('repo', did)
     url.searchParams.set('collection', 'app.photosky.postMeta')
     url.searchParams.set('limit', '100')
     if (cursor) url.searchParams.set('cursor', cursor)
-    const res = await fetch(url.toString())
-    const data = await res.json()
-    metaRecords.push(...(data.records ?? []))
-    if (!data.cursor || (data.records ?? []).length === 0) break
+    const data = await fetchJson(url.toString(), 'listRecords')
+    if (!data) {
+      if (page === 0) listFailed = true
+      break
+    }
+    const records: any[] = data.records ?? []
+    for (const rec of records) {
+      const rkey = String(rec.uri).split('/').pop()
+      if (rkey) rkeys.push(rkey)
+    }
+    if (!data.cursor || records.length === 0) break
     cursor = data.cursor
   }
+  if (rkeys.length === 0) return {posts: [], failed: listFailed}
 
-  // Tarik post Bluesky asli satu-satu (paralel) buat dapetin semua blob foto + aspect ratio-nya
-  const results = await mapPool(metaRecords, 12, async (meta: any): Promise<PhotoPost | null> => {
-    const rkey = meta.uri.split('/').pop()
-    try {
-      const res = await fetch(`https://bsky.social/xrpc/com.atproto.repo.getRecord?repo=${did}&collection=app.bsky.feed.post&rkey=${rkey}`)
-      if (!res.ok) return null
-      const {value} = await res.json()
-      const embedImages = value?.embed?.images ?? value?.embed?.media?.images ?? []
-      const images: ImageItem[] = embedImages
-        .filter((img: any) => img?.image?.ref?.$link)
-        .map((img: any) => {
-          const blobUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${img.image.ref.$link}`
-          return {
-            thumb: wsrv(blobUrl, THUMB_W, THUMB_Q),
-            full:  wsrv(blobUrl, FULL_W, FULL_Q),
-            width:  img.aspectRatio?.width  ?? 1,
-            height: img.aspectRatio?.height ?? 1,
-            alt: img.alt ?? '',
-          }
-        })
-      if (images.length === 0) return null
-      return {images, createdAt: value.createdAt ?? meta.value.createdAt}
-    } catch {
-      return null
-    }
+  const chunks: string[][] = []
+  for (let i = 0; i < rkeys.length; i += 25) chunks.push(rkeys.slice(i, i + 25))
+  const batches = await mapPool(chunks, 4, async chunk => {
+    const qs = chunk.map(r => `uris=${encodeURIComponent(`at://${did}/app.bsky.feed.post/${r}`)}`).join('&')
+    const data = await fetchJson(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPosts?${qs}`, 'getPosts')
+    return (data?.posts ?? []) as any[]
   })
 
-  return results
+  const posts = batches
+    .flat()
+    .map((post: any): PhotoPost | null => {
+      const embed = post?.embed
+      const embedImages: any[] = embed?.images ?? embed?.media?.images ?? []
+      const images: ImageItem[] = embedImages
+        .filter(img => img?.fullsize)
+        .map(img => ({
+          thumb: wsrv(img.fullsize, THUMB_W, THUMB_Q),
+          full: wsrv(img.fullsize, FULL_W, FULL_Q),
+          width: img.aspectRatio?.width ?? 1,
+          height: img.aspectRatio?.height ?? 1,
+          alt: img.alt ?? '',
+        }))
+      if (images.length === 0) return null
+      return {images, createdAt: post.record?.createdAt ?? post.indexedAt}
+    })
     .filter((p): p is PhotoPost => p !== null)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  // Ada daftar rkey tapi tidak satu pun foto berhasil diambil = kegagalan (bukan galeri kosong)
+  return {posts, failed: posts.length === 0}
 }
 
 export const loader = async () => {
@@ -102,17 +129,20 @@ export const loader = async () => {
     'Cache-Control': 'public, max-age=60, stale-while-revalidate=600',
   }
 
-  // Dulu: tiap kunjungan = ratusan request ke Bluesky sebelum halaman tampil.
-  // Sekarang: hasilnya di-cache di Redis 10 menit.
+  // Hasil di-cache di Redis 10 menit (hanya hasil yang berhasil).
   const cached = await getCachedGallery<{posts: PhotoPost[]; did: string}>()
-  if (cached) return json(cached, {headers})
+  if (cached && cached.posts?.length) return json({...cached, failed: false}, {headers})
 
-  const did = await resolveDid()
-  const posts = await fetchZeensPhotos(did)
-  const payload = {posts, did}
-  if (posts.length > 0) await setCachedGallery(payload) // jangan cache hasil kosong (mungkin gagal sementara)
-
-  return json(payload, {headers})
+  try {
+    const did = await resolveDid()
+    const {posts, failed} = await fetchZeensPhotos(did)
+    if (posts.length > 0) await setCachedGallery({posts, did})
+    // Jangan biarkan browser menyimpan hasil gagal/kosong
+    return json({posts, did, failed}, {headers: posts.length > 0 ? headers : {...headers, 'Cache-Control': 'no-store'}})
+  } catch (err) {
+    console.error('[gallery] loader gagal:', err)
+    return json({posts: [] as PhotoPost[], did: '', failed: true}, {headers: {...headers, 'Cache-Control': 'no-store'}})
+  }
 }
 
 function Lightbox({images, initialIndex, onClose, dateLabel}: {images: ImageItem[]; initialIndex: number; onClose: () => void; dateLabel?: string}) {
@@ -408,7 +438,7 @@ const PAGE_SIZE = 24
 type MonthGroup = {label: string; posts: PhotoPost[]}
 
 export default function Gallery() {
-  const {posts} = useLoaderData<typeof loader>() as unknown as {posts: PhotoPost[]; did: string}
+  const {posts, failed} = useLoaderData<typeof loader>() as unknown as {posts: PhotoPost[]; did: string; failed?: boolean}
   const [lightboxPost, setLightboxPost] = useState<PhotoPost | null>(null)
   const [year, setYear] = useState<string | null>(null)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
@@ -500,7 +530,19 @@ export default function Gallery() {
         )}
 
         {posts.length === 0 ? (
-          <p className="font-mono text-[19px] text-[#555]">Belum ada foto.</p>
+          failed ? (
+            <div>
+              <p className="font-mono text-[17px] text-[#777]">Foto belum bisa dimuat sekarang.</p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="font-mono text-[13px] text-[#4a9eff] hover:text-[#7c6ff7] transition-colors mt-2">
+                Coba lagi
+              </button>
+            </div>
+          ) : (
+            <p className="font-mono text-[19px] text-[#555]">Belum ada foto.</p>
+          )
         ) : (
           <>
             {groups.map(group => (
