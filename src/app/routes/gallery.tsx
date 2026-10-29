@@ -75,6 +75,7 @@ async function fetchZeensPhotos(did: string): Promise<{posts: PhotoPost[]; faile
     url.searchParams.set('repo', did)
     url.searchParams.set('collection', 'app.photosky.postMeta')
     url.searchParams.set('limit', '100')
+    url.searchParams.set('reverse', 'true') // terbaru dulu
     if (cursor) url.searchParams.set('cursor', cursor)
     const data = await fetchJson(url.toString(), 'listRecords')
     if (!data) {
@@ -99,7 +100,7 @@ async function fetchZeensPhotos(did: string): Promise<{posts: PhotoPost[]; faile
     return (data?.posts ?? []) as any[]
   })
 
-  const posts = batches
+  let posts = batches
     .flat()
     .map((post: any): PhotoPost | null => {
       const embed = post?.embed
@@ -118,6 +119,37 @@ async function fetchZeensPhotos(did: string): Promise<{posts: PhotoPost[]; faile
     })
     .filter((p): p is PhotoPost => p !== null)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  // Cadangan: kalau batch getPosts tidak menghasilkan apa-apa, ambil 60 post terbaru satu-satu lewat
+  // getRecord (jalur yang sama dengan kartu "Latest photo" di beranda).
+  if (posts.length === 0) {
+    console.error('[gallery] getPosts kosong, mencoba getRecord satu-satu')
+    const results = await mapPool(rkeys.slice(0, 60), 6, async (rkey): Promise<PhotoPost | null> => {
+      const data = await fetchJson(
+        `https://bsky.social/xrpc/com.atproto.repo.getRecord?repo=${did}&collection=app.bsky.feed.post&rkey=${rkey}`,
+        'getRecord',
+      )
+      const value = data?.value
+      const embedImages: any[] = value?.embed?.images ?? value?.embed?.media?.images ?? []
+      const images: ImageItem[] = embedImages
+        .filter(img => img?.image?.ref?.$link)
+        .map(img => {
+          const blobUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${img.image.ref.$link}`
+          return {
+            thumb: wsrv(blobUrl, THUMB_W, THUMB_Q),
+            full: wsrv(blobUrl, FULL_W, FULL_Q),
+            width: img.aspectRatio?.width ?? 1,
+            height: img.aspectRatio?.height ?? 1,
+            alt: img.alt ?? '',
+          }
+        })
+      if (images.length === 0) return null
+      return {images, createdAt: value.createdAt}
+    })
+    posts = results
+      .filter((p): p is PhotoPost => p !== null)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  }
 
   // Ada daftar rkey tapi tidak satu pun foto berhasil diambil = kegagalan (bukan galeri kosong)
   return {posts, failed: posts.length === 0}
