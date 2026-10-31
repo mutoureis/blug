@@ -117,6 +117,63 @@ body > * {
   }
 }
 
+/* Equalizer kecil untuk status "Mutho is listening". Warna mengikuti `color` induknya (currentColor).
+   Bergerak hanya kalau data-live="true"; selain itu batangnya diam dan pendek. */
+.eq-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+  flex: none;
+}
+.eq-bars > i {
+  display: block;
+  width: 2.5px;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+  transform-origin: bottom;
+  transform: scaleY(0.25);
+}
+.eq-bars[data-live='true'] > i {
+  animation: eq-bounce 1s ease-in-out infinite;
+}
+.eq-bars[data-live='true'] > i:nth-child(2) {
+  animation-delay: -0.7s;
+  animation-duration: 0.9s;
+}
+.eq-bars[data-live='true'] > i:nth-child(3) {
+  animation-delay: -0.3s;
+  animation-duration: 1.2s;
+}
+.eq-bars[data-live='true'] > i:nth-child(4) {
+  animation-delay: -0.55s;
+  animation-duration: 0.8s;
+}
+@keyframes eq-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.25);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* Cahaya hijau lembut di sekitar cover album saat lagu sedang diputar. */
+.art-glow {
+  animation: art-glow 2.4s ease-in-out infinite;
+}
+@keyframes art-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(30, 215, 96, 0);
+  }
+  50% {
+    box-shadow: 0 0 22px 2px rgba(30, 215, 96, 0.28);
+  }
+}
+
 /* Respect reduced-motion preference across every animation added above. */
 @media (prefers-reduced-motion: reduce) {
   .fade-up-item,
@@ -125,6 +182,13 @@ body > * {
     transition: none !important;
     opacity: 1 !important;
     transform: none !important;
+  }
+  .art-glow,
+  .eq-bars[data-live='true'] > i {
+    animation: none !important;
+  }
+  .eq-bars[data-live='true'] > i {
+    transform: scaleY(0.7);
   }
 }
 
