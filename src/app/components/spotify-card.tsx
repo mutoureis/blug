@@ -1,6 +1,21 @@
 import {useEffect, useState} from 'react'
 import type {NowPlayingTrack} from '../../spotify/spotify.server.js'
 
+/** Nama yang tampil di label "… is listening". */
+export const LISTENER_NAME = 'Mutho'
+
+/** Equalizer 4 batang. Bergerak kalau `live`, diam kalau tidak. Warnanya mengikuti warna teks induk. */
+export function EqBars({live}: {live: boolean}) {
+  return (
+    <span className="eq-bars" data-live={live ? 'true' : 'false'} aria-hidden="true">
+      <i />
+      <i />
+      <i />
+      <i />
+    </span>
+  )
+}
+
 /** playing = sedang diputar · paused = di-pause (progress berhenti) · last = tidak ada sesi, ini lagu terakhir didengar */
 type Mode = 'playing' | 'paused' | 'last'
 
@@ -36,27 +51,36 @@ export function SpotifyCard({spotify, className = ''}: {spotify: NowPlayingTrack
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
   }
 
+  const live = mode === 'playing'
   const label =
-    mode === 'paused'
-      ? 'Paused'
-      : mode === 'last'
-        ? `Last listened${spotify.last_played_at ? ` · ${timeAgo(spotify.last_played_at, now)}` : ''}`
-        : null
+    mode === 'playing'
+      ? `${LISTENER_NAME} is listening`
+      : mode === 'paused'
+        ? 'Paused'
+        : `Last listened${spotify.last_played_at ? ` · ${timeAgo(spotify.last_played_at, now)}` : ''}`
 
   return (
     <a
       href={`https://open.spotify.com/track/${spotify.track_id}`}
       target="_blank"
       rel="noopener noreferrer"
-      className={`flex items-center gap-3 rounded-xl border border-[#1c1c1c] bg-[#111] p-3 transition-colors hover:bg-[#161616] ${className}`}>
+      className={`flex items-center gap-3 rounded-xl border bg-[#111] p-3 transition-colors hover:bg-[#161616] ${
+        live ? 'border-[#1ed760]/35' : 'border-[#1c1c1c]'
+      } ${className}`}>
       <img
         src={spotify.album_art_url}
         alt=""
-        className={`w-14 h-14 rounded-lg shrink-0 object-cover ${mode === 'playing' ? '' : 'opacity-80'}`}
+        className={`w-14 h-14 rounded-lg shrink-0 object-cover ${live ? 'art-glow' : 'opacity-80'}`}
       />
       <div className="min-w-0 flex-1">
-        {label && <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#666] mb-0.5">{label}</div>}
-        <div className={`font-mono text-sm truncate ${mode === 'playing' ? 'text-[#1ed760]' : 'text-[#d4d4da]'}`}>
+        <div
+          className={`flex items-center gap-2 font-mono text-[10px] tracking-[0.14em] uppercase mb-0.5 ${
+            live ? 'text-[#1ed760]' : 'text-[#666]'
+          }`}>
+          {live && <EqBars live />}
+          <span className="truncate">{label}</span>
+        </div>
+        <div className={`font-mono text-sm truncate ${live ? 'text-[#f0f0f0]' : 'text-[#d4d4da]'}`}>
           {spotify.song}
         </div>
         <div className="font-mono text-xs text-[#999] truncate">by {spotify.artist}</div>
@@ -101,21 +125,14 @@ export function SpotifyCompactCard({spotify, className = ''}: {spotify: NowPlayi
         <div className="font-mono text-xs text-[#666] mt-0.5 truncate">{spotify.artist}</div>
       </div>
       {mode === 'playing' ? (
-        <div className="flex items-end gap-[2px] h-3.5 shrink-0" aria-hidden="true">
-          {[0, 1, 2].map(i => (
-            <span
-              key={i}
-              className="w-[2px] bg-[#1ed760] rounded-full"
-              style={{animation: `eq 1s ease-in-out infinite`, animationDelay: `${-0.4 + i * 0.2}s`}}
-            />
-          ))}
-        </div>
+        <span className="text-[#1ed760] shrink-0">
+          <EqBars live />
+        </span>
       ) : (
         <span className="font-mono text-[10px] text-[#666] shrink-0">
           {mode === 'paused' ? 'Paused' : spotify.last_played_at ? timeAgo(spotify.last_played_at, Date.now()) : ''}
         </span>
       )}
-      <style>{`@keyframes eq { 0%, 100% { height: 3px; } 50% { height: 14px; } }`}</style>
     </a>
   )
 }
