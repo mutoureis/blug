@@ -222,7 +222,7 @@ export default function About() {
           </Section>
 
           <Section label="Education">
-            <WorkItem index={5} company="Universitas Jambi" period="2018 — 2022" />
+            <WorkItem index={5} company="Universitas Jambi" role="Jambi, Indonesia" period="2018 — 2022" />
             <WorkItem index={6} company="Sulaimaniyah Boarding School" role="Istanbul, Turkey" period="2009 — 2013" />
           </Section>
 
