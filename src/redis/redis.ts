@@ -119,6 +119,28 @@ export const setCachedLatestPhoto = async (data: unknown): Promise<void> => {
   }
 }
 
+// Salinan "terakhir yang berhasil" untuk kartu beranda (tulisan terbaru, foto terbaru). Umurnya panjang
+// (30 hari) dan sengaja terpisah dari cache biasa yang cepat kedaluwarsa: kalau Bluesky sedang lambat
+// atau gagal, beranda tetap menampilkan data lama lengkap dengan gambarnya, bukan kartu tanpa gambar.
+export const getLastGood = async <T>(key: string): Promise<T | null> => {
+  try {
+    const res = await getClient().get(`last-good:${key}`)
+    if (!res) return null
+    return JSON.parse(res) as T
+  } catch (err) {
+    console.error('getLastGood error:', err)
+    return null
+  }
+}
+
+export const setLastGood = async (key: string, data: unknown): Promise<void> => {
+  try {
+    await getClient().set(`last-good:${key}`, JSON.stringify(data), 'EX', 60 * 60 * 24 * 30)
+  } catch (err) {
+    console.error('setLastGood error:', err)
+  }
+}
+
 // Lagu terakhir yang terlihat sedang diputar di Spotify (cadangan untuk kartu "Last listened").
 export const getCachedLastListened = async <T>(): Promise<T | null> => {
   try {
