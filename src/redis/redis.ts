@@ -138,3 +138,26 @@ export const setCachedLastListened = async (data: unknown): Promise<void> => {
     console.error('setCachedLastListened error:', err)
   }
 }
+
+// ── Penghitung pengunjung ────────────────────────────────────────────────────────────
+// visits:unique = HyperLogLog pengunjung unik sepanjang waktu (yang disimpan hanya hash, galat ~0,8%).
+// PFADD bersifat idempoten: hash yang sama berulang kali tidak menambah angka.
+export type VisitCounts = {unique: number}
+
+export const getVisitCounts = async (): Promise<VisitCounts> => {
+  try {
+    return {unique: await getClient().pfcount('visits:unique')}
+  } catch (err) {
+    console.error('getVisitCounts error:', err)
+    return {unique: 0}
+  }
+}
+
+export const recordVisit = async (visitorHash: string): Promise<VisitCounts> => {
+  try {
+    await getClient().pfadd('visits:unique', visitorHash)
+  } catch (err) {
+    console.error('recordVisit error:', err)
+  }
+  return getVisitCounts()
+}
