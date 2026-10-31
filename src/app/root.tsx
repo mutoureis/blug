@@ -17,6 +17,7 @@ import styles from './tailwind.css?url'
 import {getProfile} from 'src/atproto'
 import {AppBskyActorDefs} from '@atproto/api'
 import {SocialSheet} from './components/social-sheet.js'
+import {VisitBadge} from './components/visit-badge.js'
 
 export const links: LinksFunction = () => [
   {rel: 'stylesheet', href: styles},
@@ -183,7 +184,7 @@ export function Layout({children}: {children: React.ReactNode}) {
             <div className="mx-auto w-full max-w-[1600px] px-4 h-[52px] flex items-center justify-between">
 
               {/* ── Kiri: Brand ── */}
-              <Link to="/" prefetch="intent" className="flex items-center gap-2 group sm:gap-2.5">
+              <Link to="/" prefetch="intent" className="flex flex-1 items-center gap-2 group sm:gap-2.5">
                 <span className="font-display text-[20px] text-[#f0f0f0] hidden sm:inline tracking-[-0.01em]">
                   mutho<span className="text-[#4a9eff]">.</span>my.id
                 </span>
@@ -195,7 +196,10 @@ export function Layout({children}: {children: React.ReactNode}) {
                 {navItems.map(item => <PillNavItem key={item.key} item={item} />)}
               </nav>
 
-              <div className="w-8 sm:w-9" />
+              {/* ── Kanan: jumlah pengunjung (desktop). Di HP badge-nya ada di halaman beranda. ── */}
+              <div className="flex flex-1 justify-end">
+                <VisitBadge />
+              </div>
             </div>
           </header>
 
