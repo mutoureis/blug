@@ -9,12 +9,24 @@ import {getDid} from '../../atproto/getDid.js'
 import {NowPlayingWidget, NowPlayingCard} from '../components/now-playing-widget.js'
 import {formatDate} from '../lib/post-utils.js'
 import {VisitBadge} from '../components/visit-badge.js'
-import {getCachedGallery, getCachedLatestPhoto, setCachedLatestPhoto} from '../../redis/redis.js'
+import {ResilientImage} from '../components/resilient-image.js'
+import {
+  getCachedGallery,
+  getCachedLatestPhoto,
+  setCachedLatestPhoto,
+  getLastGood,
+  setLastGood,
+} from '../../redis/redis.js'
 
 export const meta: MetaFunction = () => [
   {title: 'About | mutho.'},
   {name: 'description', content: 'About Mutho — hanya seorang guru dan murid abadi'},
 ]
+
+// Sambungan ke server gambar dibuka lebih awal supaya gambar kartu tidak menunggu handshake.
+export const headers = () => ({
+  Link: '<https://wsrv.nl>; rel=preconnect, <https://cdn.bsky.app>; rel=preconnect',
+})
 
 type LatestPost = {rkey: string; title: string; publishedAt: string; image: string | null}
 type LatestPhoto = {thumb: string; alt: string; createdAt: string}
@@ -38,8 +50,34 @@ function findPostImage(post: LeafletDocument): string | null {
   return null
 }
 
-// Tulisan terbaru. getPosts sudah di-cache Redis (60 dtk). Gagal -> null, kartunya jatuh ke tautan biasa.
-async function getLatestPost(): Promise<LatestPost | null> {
+// "Terakhir yang berhasil": kalau pengambilan data baru gagal atau terlalu lama, pakai data lama (memori -> Redis)
+// supaya kartu beranda tidak tiba-tiba kehilangan gambarnya. Penyebab utama gambar "kadang muncul kadang hilang":
+// cache 60 dtk / 10 menit habis + Bluesky lambat -> fungsi mengembalikan null -> kartu jatuh ke versi tanpa gambar.
+const _lastGood = new Map<string, unknown>()
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([promise, new Promise<null>(resolve => setTimeout(() => resolve(null), ms))])
+}
+
+async function withLastGood<T extends object>(key: string, fetcher: () => Promise<T | null>): Promise<T | null> {
+  const fresh = await withTimeout(fetcher(), 3500)
+  if (fresh) {
+    // Tulis ke Redis hanya kalau isinya berubah
+    if (JSON.stringify(_lastGood.get(key)) !== JSON.stringify(fresh)) {
+      _lastGood.set(key, fresh)
+      await setLastGood(key, fresh)
+    }
+    return fresh
+  }
+  const stale = (_lastGood.get(key) as T | undefined) ?? (await getLastGood<T>(key))
+  if (stale) _lastGood.set(key, stale)
+  return stale
+}
+
+// Tulisan terbaru. getPosts sudah di-cache Redis (60 dtk). Gagal -> pakai data lama, baru null kalau memang belum pernah ada.
+const getLatestPost = () => withLastGood<LatestPost>('home:latest-post', fetchLatestPost)
+
+async function fetchLatestPost(): Promise<LatestPost | null> {
   try {
     const posts = await getPosts(undefined)
     const [first] = [...posts].sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
@@ -57,7 +95,9 @@ const HANDLE = 'mutho.my.id'
 const wsrv = (url: string, w: number, q: number) =>
   `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${w}&q=${q}&output=webp&we=1`
 
-async function getLatestPhoto(): Promise<LatestPhoto | null> {
+const getLatestPhoto = () => withLastGood<LatestPhoto>('home:latest-photo', fetchLatestPhoto)
+
+async function fetchLatestPhoto(): Promise<LatestPhoto | null> {
   try {
     const gallery = await getCachedGallery<{posts: {images: {thumb: string; alt: string}[]; createdAt: string}[]}>()
     const first = gallery?.posts?.[0]
@@ -352,7 +392,7 @@ function HomeTiles({post, photo}: {post: LatestPost | null; photo: LatestPhoto |
         post.image ? (
           // Tulisan terbaru punya gambar -> tampil seperti kartu foto: gambar penuh + judul di atas gradasi
           <Link to={`/posts/${post.rkey}`} prefetch="intent" className={cardCls}>
-            <img src={post.image} alt="" decoding="async" className="absolute inset-0 w-full h-full object-cover" style={IMG_DIM} />
+            <ResilientImage src={post.image} className="absolute inset-0 w-full h-full object-cover" style={IMG_DIM} />
             <div className="absolute inset-0" style={DIM_OVERLAY} aria-hidden="true" />
             <span
               className="absolute top-3 left-3.5 font-mono text-[10px] tracking-[0.16em] uppercase text-[#f0f0f0]"
@@ -379,10 +419,9 @@ function HomeTiles({post, photo}: {post: LatestPost | null; photo: LatestPhoto |
 
       {photo ? (
         <Link to="/gallery" prefetch="intent" className={cardCls} aria-label="Gallery — latest photo">
-          <img
+          <ResilientImage
             src={photo.thumb}
             alt={photo.alt || 'Latest photo from the gallery'}
-            decoding="async"
             className="absolute inset-0 w-full h-full object-cover"
             style={IMG_DIM}
           />
