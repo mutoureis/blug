@@ -1,13 +1,14 @@
 import {useSpotifyNowPlaying} from '../hooks/use-spotify-now-playing.js'
-import {SpotifyCard, SpotifyCompactCard} from './spotify-card.js'
+import {SpotifyCard, SpotifyCompactCard, LISTENER_NAME} from './spotify-card.js'
 
 /**
- * Sidebar variant: blok berlabel "Now playing" saat ada lagu diputar, "Paused" saat di-pause, dan
+ * Sidebar variant: blok berlabel "Mutho is listening" saat ada lagu diputar, "Paused" saat di-pause, dan
  * "Last listened" (lagu terakhir) saat tidak ada yang diputar. Baru hilang kalau belum ada data sama sekali.
  */
 /** Judul blok sesuai keadaan: sedang diputar / di-pause / terakhir didengar. */
 function nowPlayingHeading(track: {is_playing: boolean; progress_ms?: number} | null): string {
-  if (!track || track.is_playing) return 'Now playing'
+  if (!track) return 'Now playing' // masih memuat
+  if (track.is_playing) return `${LISTENER_NAME} is listening`
   return track.progress_ms != null ? 'Paused' : 'Last listened'
 }
 
@@ -51,6 +52,8 @@ export function NowPlayingMobileBar() {
 export function NowPlayingCard({className = ''}: {className?: string}) {
   const {track, status} = useSpotifyNowPlaying()
 
+  // Saat memuat tampilkan kerangka dengan tinggi yang sama, supaya halaman tidak melompat ketika kartunya muncul.
+  if (status === 'loading') return <div className={`skeleton-line h-[84px] rounded-xl ${className}`} aria-hidden="true" />
   if (status === 'error' || !track) return null
 
   return <SpotifyCard spotify={track} className={className} />
