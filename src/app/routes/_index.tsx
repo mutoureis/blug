@@ -163,7 +163,7 @@ export default function About() {
           </ul>
 
           <p className="font-sans text-[15px] sm:text-[16px] text-[#c9c9cf] leading-[1.75] max-w-[540px] mb-6">
-            Mutho (Muthohhar) is a coffee addict who loves to ramble about the things above. This site is his
+            Mutho is a coffee addict who loves to ramble about the things above. This site is his
             personal space to write about whatever else is on his mind.
           </p>
 
