@@ -289,7 +289,7 @@ function PhotoTile({post, eager, onClick}: {post: PhotoPost; eager?: boolean; on
       role="button"
       tabIndex={0}
       aria-label="Open photo"
-      className="relative mb-3 break-inside-avoid overflow-hidden rounded-xl cursor-zoom-in bg-[#111] transition-transform duration-150 active:scale-[0.97]"
+      className="relative mb-3 lg:mb-4 break-inside-avoid overflow-hidden rounded-xl cursor-zoom-in bg-[#111] transition-transform duration-150 active:scale-[0.97] lg:hover:brightness-110"
       onClick={e => { e.preventDefault(); onClick() }}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}>
       {/* Shimmer placeholder shown until the actual thumbnail finishes loading */}
@@ -366,13 +366,7 @@ export default function Gallery() {
   let tileIndex = 0
 
   return (
-    <div className="flex" style={{minHeight: 'calc(100vh - 52px - 48px)'}}>
-
-      {/* ── Left Sidebar: dihapus (dulu berisi Contact), spacer dipertahankan biar konten tetap center di desktop ── */}
-      <aside className="hidden lg:block w-[220px] shrink-0" />
-
-      {/* ── Main Content ── */}
-      <div className="flex-1 px-6 md:px-14 pt-8 pb-3 sm:pb-8 min-w-0">
+    <div className="mx-auto w-full max-w-[1120px] xl:max-w-[1240px] px-6 md:px-14 lg:px-10 pt-8 lg:pt-16 pb-3 sm:pb-8 lg:pb-20 min-w-0">
         {lightboxPost && (
           <Lightbox
             images={lightboxPost.images}
@@ -382,12 +376,14 @@ export default function Gallery() {
           />
         )}
 
-        <header className="mb-6">
-          <h1 className="font-display text-[42px] md:text-[46px] text-[#f0f0f0] tracking-[-0.02em]">Gallery<span className="text-[#4a9eff]">.</span></h1>
-          <p className="font-mono text-[17px] text-[#aaaaaa] mt-2">Just dropping some memories here.</p>
-          {/* Di HP jumlah foto tampil di sini (di desktop ada di sidebar kanan) */}
+        <header className="mb-6 lg:mb-10 lg:flex lg:items-end lg:justify-between lg:gap-8">
+          <div>
+            <h1 className="font-display text-[42px] md:text-[46px] lg:text-[56px] text-[#f0f0f0] leading-tight tracking-[-0.02em]">Gallery<span className="text-[#4a9eff]">.</span></h1>
+            <p className="font-mono text-[17px] lg:text-[16px] text-[#aaaaaa] mt-2 lg:mt-3">Just dropping some memories here.</p>
+          </div>
+          {/* Jumlah foto: di bawah judul di HP, rata kanan sejajar judul di desktop */}
           {posts.length > 0 && (
-            <p className="lg:hidden font-mono text-[12px] text-[#8b8b93] mt-3">
+            <p className="font-mono text-[12px] lg:text-[13px] text-[#8b8b93] mt-3 lg:mt-0 lg:pb-2 lg:text-right">
               <span className="text-[#f0f0f0]">{totalPhotos}</span> photos ·{' '}
               <span className="text-[#f0f0f0]">{posts.length}</span> posts · {yearRange}
             </p>
@@ -395,7 +391,7 @@ export default function Gallery() {
         </header>
 
         {years.length > 1 && (
-          <div className="chip-scroll mb-4" style={{'--chip-bleed': '1.5rem'} as CSSProperties} data-no-swipe>
+          <div className="chip-scroll mb-4 lg:mb-6" style={{'--chip-bleed': '1.5rem'} as CSSProperties} data-no-swipe>
             {[null, ...years].map(y => (
               <button
                 key={y ?? 'all'}
@@ -421,12 +417,12 @@ export default function Gallery() {
               <section key={group.label}>
                 {/* Header bulan menempel saat scroll */}
                 <div
-                  className="sticky top-0 sm:top-[52px] z-10 -mx-6 md:-mx-14 px-6 md:px-14 py-2.5 mb-2 flex justify-between font-mono text-[11px] tracking-[0.16em] uppercase text-[#8b8b93]"
+                  className="sticky top-0 sm:top-16 z-10 -mx-6 md:-mx-14 lg:-mx-10 px-6 md:px-14 lg:px-10 py-2.5 lg:py-3 mb-2 lg:mb-3 flex justify-between font-mono text-[11px] tracking-[0.16em] uppercase text-[#8b8b93]"
                   style={{background: 'rgba(10,10,10,0.88)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)'}}>
                   <span>{group.label}</span>
                   <span>{group.posts.length}</span>
                 </div>
-                <div className="columns-2 sm:columns-3 gap-3 mb-2">
+                <div className="columns-2 sm:columns-3 lg:columns-4 gap-3 lg:gap-4 mb-2 lg:mb-8">
                   {group.posts.map(post => {
                     const i = tileIndex++
                     return <PhotoTile key={post.createdAt + i} post={post} eager={i < 6} onClick={() => setLightboxPost(post)} />
@@ -437,17 +433,6 @@ export default function Gallery() {
             {hasMore && <div ref={sentinelRef} className="h-12" aria-hidden="true" />}
           </>
         )}
-      </div>
-
-      {/* ── Right Sidebar: Photo count (sticky) ── */}
-      <aside className="hidden lg:flex flex-col w-[220px] shrink-0 border-l border-[#1e1e1e] px-5 py-6 sticky top-[52px] self-start h-[calc(100vh-52px)] overflow-y-auto">
-        <p className="font-mono text-[12px] tracking-[0.14em] uppercase text-[#aaaaaa] mb-3">Gallery</p>
-        <div className="mb-6">
-          <div className="font-display text-[36px] text-[#f0f0f0] leading-none">{totalPhotos}</div>
-          <div className="font-mono text-[12px] text-[#aaaaaa] mt-1">Photos</div>
-        </div>
-      </aside>
-
     </div>
   )
 }
