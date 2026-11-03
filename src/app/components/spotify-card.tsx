@@ -107,6 +107,9 @@ export function SpotifyCard({spotify, className = ''}: {spotify: NowPlayingTrack
 /** Compact single-row variant with an equalizer animation — fits a mobile bar or a tight sidebar slot. */
 export function SpotifyCompactCard({spotify, className = ''}: {spotify: NowPlayingTrack; className?: string}) {
   const mode = modeOf(spotify)
+  // Keterangan waktu/status pindah ke baris sendiri (bukan di kanan), supaya judul & artis tidak terpotong "Morn…".
+  const meta =
+    mode === 'paused' ? 'Paused' : mode === 'last' && spotify.last_played_at ? timeAgo(spotify.last_played_at, Date.now()) : null
   return (
     <a
       href={`https://open.spotify.com/track/${spotify.track_id}`}
@@ -116,21 +119,18 @@ export function SpotifyCompactCard({spotify, className = ''}: {spotify: NowPlayi
       <img
         src={spotify.album_art_url}
         alt=""
-        className={`w-11 h-11 rounded-lg shrink-0 object-cover ${mode === 'playing' ? '' : 'opacity-80'}`}
+        className={`w-12 h-12 rounded-lg shrink-0 object-cover ${mode === 'playing' ? '' : 'opacity-80'}`}
       />
       <div className="min-w-0 flex-1">
-        <div className={`font-mono text-sm truncate ${mode === 'playing' ? 'text-[#1ed760]' : 'text-[#d4d4da]'}`}>
+        <div className={`font-mono text-[13px] leading-snug line-clamp-2 break-words ${mode === 'playing' ? 'text-[#1ed760]' : 'text-[#e4e4e7]'}`}>
           {spotify.song}
         </div>
-        <div className="font-mono text-xs text-[#666] mt-0.5 truncate">{spotify.artist}</div>
+        <div className="font-mono text-[12px] text-[#8b8b93] mt-0.5 truncate">{spotify.artist}</div>
+        {meta && <div className="font-mono text-[10.5px] text-[#5a5a62] mt-0.5">{meta}</div>}
       </div>
-      {mode === 'playing' ? (
+      {mode === 'playing' && (
         <span className="text-[#1ed760] shrink-0">
           <EqBars live />
-        </span>
-      ) : (
-        <span className="font-mono text-[10px] text-[#666] shrink-0">
-          {mode === 'paused' ? 'Paused' : spotify.last_played_at ? timeAgo(spotify.last_played_at, Date.now()) : ''}
         </span>
       )}
     </a>
