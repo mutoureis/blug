@@ -178,20 +178,21 @@ export function Layout({children}: {children: React.ReactNode}) {
         <div className="flex flex-col flex-1">
           {/* NAV — cuma dipakai di desktop, karena mobile udah dihandle pill bawah */}
           <header
-            className="hidden sm:block sticky top-0 z-50 border-b border-[#222]"
-            style={{background: 'rgba(10,10,10,0.92)', backdropFilter: 'blur(12px)'}}>
+            className="hidden sm:block sticky top-0 z-50 border-b border-[#1a1a1a]"
+            style={{background: 'rgba(10,10,10,0.8)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)'}}>
 
-            <div className="mx-auto w-full max-w-[1600px] px-4 h-[52px] flex items-center justify-between">
+            {/* Lebar & padding sama persis dengan konten halaman (max 1120px) supaya brand/visitor sejajar dengan isi */}
+            <div className="mx-auto w-full max-w-[1120px] px-6 md:px-14 lg:px-10 h-16 flex items-center justify-between">
 
               {/* ── Kiri: Brand ── */}
               <Link to="/" prefetch="intent" className="flex flex-1 items-center gap-2 group sm:gap-2.5">
-                <span className="font-display text-[20px] text-[#f0f0f0] hidden sm:inline tracking-[-0.01em]">
+                <span className="font-display text-[20px] lg:text-[22px] text-[#f0f0f0] hidden sm:inline tracking-[-0.01em]">
                   mutho<span className="text-[#4a9eff]">.</span>my.id
                 </span>
               </Link>
 
               {/* ── Desktop: pill nav nempel di header ── */}
-              <nav className="hidden sm:flex items-center gap-1 rounded-full p-1 border border-[#222]"
+              <nav className="hidden sm:flex items-center gap-1 rounded-full p-1 border border-[#1f1f1f]"
                 style={{background: 'rgba(255,255,255,0.03)'}}>
                 {navItems.map(item => <PillNavItem key={item.key} item={item} />)}
               </nav>
@@ -304,11 +305,12 @@ function NavIcon({name, className}: {name: NavIconName; className?: string}) {
 
 function PillNavItem({item}: {item: NavItemDef}) {
   const inner = (
-    <div className={`flex flex-col items-center gap-0.5 px-3.5 py-1.5 rounded-full transition-colors ${
+    // Mobile: ikon di atas label (pill bawah). Desktop (sm+): ikon & label sebaris, label 13px supaya nyaman dibaca.
+    <div className={`flex flex-col items-center gap-0.5 px-3.5 py-1.5 rounded-full transition-colors sm:flex-row sm:gap-2 sm:px-4 sm:py-2 ${
       item.selected ? 'bg-white/[0.08] text-[#f0f0f0]' : 'text-[#666] hover:text-[#aaa]'
     }`}>
-      <NavIcon name={item.icon} className={`w-[19px] h-[19px] ${item.selected ? 'text-[#4a9eff]' : ''}`} />
-      <span className="font-mono text-[10px] tracking-[0.04em] leading-none">{item.label}</span>
+      <NavIcon name={item.icon} className={`w-[19px] h-[19px] sm:w-[17px] sm:h-[17px] ${item.selected ? 'text-[#4a9eff]' : ''}`} />
+      <span className="font-mono text-[10px] sm:text-[13px] tracking-[0.04em] leading-none">{item.label}</span>
     </div>
   )
   if (item.href) {
