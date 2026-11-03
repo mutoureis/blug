@@ -150,18 +150,14 @@ export default function Blog() {
   }
 
   return (
-    <div className="flex" style={{minHeight: 'calc(100vh - 52px - 48px)'}}>
-
-      {/* ── Main Content ── */}
-      <div className="flex-1 min-w-0 flex justify-center">
-        <div className="w-full max-w-3xl px-8 md:px-14 pt-10 pb-4 sm:pb-10">
+    <div className="mx-auto w-full max-w-3xl lg:max-w-[1120px] px-8 md:px-14 lg:px-10 pt-10 lg:pt-16 pb-4 sm:pb-12 lg:pb-20 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-x-16 xl:gap-x-20 lg:items-start">
 
           {/* Hero */}
-          <section className="mb-6">
-            <h1 className="font-display text-[42px] md:text-[46px] text-[#f0f0f0] leading-tight tracking-[-0.02em]">
+          <section className="mb-6 lg:mb-12 lg:col-span-2">
+            <h1 className="font-display text-[42px] md:text-[46px] lg:text-[56px] text-[#f0f0f0] leading-tight tracking-[-0.02em]">
               Writing<span className="text-[#4a9eff]">.</span>
             </h1>
-            <p className="font-mono text-[17px] text-[#aaaaaa] mt-2">Just writing random stuff here.</p>
+            <p className="font-mono text-[17px] lg:text-[16px] text-[#aaaaaa] mt-2 lg:mt-3">Just writing random stuff here.</p>
             {entries.length > 0 && (
               <p className="font-mono text-[12px] text-[#8b8b93] mt-2">
                 {entries.length} {entries.length === 1 ? 'post' : 'posts'} · latest {formatDate(entries[0].date)}
@@ -170,9 +166,9 @@ export default function Blog() {
           </section>
 
           {entries.length > 0 && (
-            <>
+            <div className="lg:col-start-2 lg:row-start-2 lg:sticky lg:top-28 lg:self-start">
               {/* Search */}
-              <label className="flex items-center gap-2 rounded-xl border border-[#1e1e1e] bg-[#111111] px-3 py-2.5 mb-3 focus-within:border-[#4a9eff]/60 transition-colors">
+              <label className="flex items-center gap-2 rounded-xl border border-[#1e1e1e] bg-[#111111] px-3 py-2.5 mb-3 lg:mb-4 focus-within:border-[#4a9eff]/60 transition-colors">
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"
@@ -196,7 +192,7 @@ export default function Blog() {
 
               {/* Tag filter — satu baris yang bisa digeser di HP (data-no-swipe: jangan ikut memicu swipe antar halaman) */}
               {allTags.length > 0 && (
-                <div className="chip-scroll mb-6" data-no-swipe>
+                <div className="chip-scroll mb-6 lg:mb-0" data-no-swipe>
                   <TagChip active={activeTag === null} onClick={() => setActiveTag(null)}>All</TagChip>
                   {allTags.map(tag => (
                     <TagChip
@@ -208,10 +204,14 @@ export default function Blog() {
                   ))}
                 </div>
               )}
-            </>
+
+              {/* Now playing: di desktop ikut kolom samping (sticky) */}
+              <NowPlayingWidget className="hidden lg:block mt-10 pt-8 border-t border-[#1a1a1a]" />
+            </div>
           )}
 
           {/* Feed */}
+          <div className="min-w-0 lg:col-start-1 lg:row-start-2">
           {isLoadingRoute ? (
             <FeedSkeleton />
           ) : filtered.length === 0 ? (
@@ -230,22 +230,16 @@ export default function Blog() {
               {featured && <FeaturedCard entry={featured} />}
 
               {groups.map(group => (
-                <section key={group.label} className="mb-3">
+                <section key={group.label} className="mb-3 lg:mb-6">
                   <p className="label mt-2 mb-1">{group.label}</p>
-                  <ul className="flex flex-col gap-3 mt-2">
+                  <ul className="flex flex-col gap-3 lg:gap-4 mt-2 lg:mt-3">
                     {group.items.map(({entry, index}) => <FeedItem entry={entry} index={index} key={entry.key} />)}
                   </ul>
                 </section>
               ))}
             </>
           )}
-        </div>
-      </div>
-
-      {/* ── Right Sidebar: Now Playing (real Spotify data) ── */}
-      <aside className="hidden lg:block w-[220px] shrink-0 border-l border-[#1e1e1e] px-5 py-10 sticky top-[52px] self-start h-[calc(100vh-52px)] overflow-y-auto">
-        <NowPlayingWidget className="mb-8" />
-      </aside>
+          </div>
 
     </div>
   )
@@ -279,9 +273,9 @@ function FeaturedCard({entry}: {entry: FeedEntry}) {
     <Link
       to={entry.href}
       prefetch="intent"
-      className="group block rounded-[18px] p-px mb-7 fade-up-item"
+      className="group block rounded-[18px] p-px mb-7 lg:mb-10 fade-up-item"
       style={{background: 'linear-gradient(135deg, rgba(74,158,255,0.6), rgba(124,111,247,0.5), transparent 70%)'}}>
-      <div className={`relative overflow-hidden rounded-[17px] bg-[#101012] p-5 ${img ? 'min-h-[230px] flex flex-col justify-end' : ''}`}>
+      <div className={`relative overflow-hidden rounded-[17px] bg-[#101012] p-5 ${img ? 'min-h-[230px] lg:min-h-[320px] flex flex-col justify-end' : ''} lg:p-8`}>
         {img && (
           <>
             <img
@@ -301,13 +295,13 @@ function FeaturedCard({entry}: {entry: FeedEntry}) {
         <div className="relative">
           <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#4a9eff]" style={img ? SHADOW : undefined}>Latest</span>
           <h2
-            className="title-underline font-display text-[22px] md:text-[26px] leading-snug text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors mt-2"
+            className="title-underline font-display text-[22px] md:text-[26px] lg:text-[32px] leading-snug text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors mt-2 lg:mt-3"
             style={img ? SHADOW : undefined}>
             {entry.title}
           </h2>
           {entry.excerpt && (
             <p
-              className={`font-sans text-[14px] md:text-[15px] leading-relaxed line-clamp-2 mt-2 ${img ? 'text-[#c4c4cc]' : 'text-[#9a9aa2]'}`}
+              className={`font-sans text-[14px] md:text-[15px] lg:text-[16px] leading-relaxed line-clamp-2 mt-2 lg:mt-3 lg:max-w-[560px] ${img ? 'text-[#c4c4cc]' : 'text-[#9a9aa2]'}`}
               style={img ? SHADOW : undefined}>
               {entry.excerpt}
             </p>
@@ -332,7 +326,7 @@ function FeedItem({entry, index}: {entry: FeedEntry; index: number}) {
       <Link
         to={entry.href}
         prefetch="intent"
-        className="group relative block overflow-hidden rounded-2xl border border-[#1c1c1f] bg-[#0f0f10] px-4 py-4 transition-colors hover:border-[#2c2c32]">
+        className="group relative block overflow-hidden rounded-2xl border border-[#1c1c1f] bg-[#0f0f10] px-4 py-4 lg:px-6 lg:py-6 transition-colors hover:border-[#2c2c32]">
         {img && (
           <>
             <img
@@ -353,7 +347,7 @@ function FeedItem({entry, index}: {entry: FeedEntry; index: number}) {
         <div className="relative">
           <div className="flex items-baseline justify-between gap-4">
             <h3
-              className="title-underline font-display text-[20px] md:text-[24px] text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors leading-snug"
+              className="title-underline font-display text-[20px] md:text-[24px] lg:text-[22px] text-[#f0f0f0] group-hover:text-[#4a9eff] transition-colors leading-snug"
               style={img ? SHADOW : undefined}>
               {entry.title}
             </h3>
