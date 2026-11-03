@@ -313,7 +313,7 @@ body > * {
 @media (min-width: 640px) {
   .social-sheet {
     bottom: auto;
-    top: 62px;
+    top: 74px; /* tepat di bawah header desktop (64px) */
     max-width: 320px;
     border: 1px solid #26262a;
     border-radius: 18px;
