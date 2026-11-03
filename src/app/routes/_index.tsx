@@ -170,89 +170,88 @@ export default function About() {
   const {post, photo, presence} = useLoaderData<typeof loader>()
 
   return (
-    <div className="flex" style={{minHeight: 'calc(100vh - 52px - 48px)'}}>
+    <div className="mx-auto w-full max-w-3xl lg:max-w-[1120px] px-6 md:px-14 lg:px-10 pt-8 pb-3 sm:py-12 lg:py-16 lg:grid lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] lg:gap-16 xl:gap-24">
 
-      {/* ── Left Sidebar: quick nav to the other pages (desktop) ── */}
-      <aside className="hidden lg:block w-[220px] shrink-0 px-5 py-10">
-        <p className="font-mono text-xs tracking-[0.14em] uppercase text-[#666] mb-4">Explore</p>
-        <ul className="flex flex-col gap-2.5 font-mono text-sm">
-          <li><Link to="/blog" prefetch="intent" className="text-[#666] hover:text-[#4a9eff] transition-colors">Writing →</Link></li>
-          <li><Link to="/gallery" prefetch="intent" className="text-[#666] hover:text-[#4a9eff] transition-colors">Gallery →</Link></li>
+      {/* ── Kolom kiri: profil (menempel saat scroll di desktop) ── */}
+      <aside className="lg:sticky lg:top-28 lg:self-start">
+        {/* Penghitung pengunjung: pojok kanan atas (di desktop pindah ke header, lihat root.tsx) */}
+        <div className="flex justify-end mb-3 sm:hidden">
+          <VisitBadge />
+        </div>
+
+        <Hero initial={presence as unknown as LanyardData | null} />
+
+        <ul className="flex flex-wrap gap-1.5 mb-5 lg:mb-6" aria-label="Interests">
+          {INTERESTS.map(tag => (
+            <li
+              key={tag}
+              className="font-mono text-[12px] text-[#cfcfd6] rounded-full border border-[#1e1e1e] px-2.5 py-1"
+              style={{background: 'rgba(255,255,255,0.04)'}}>
+              {tag}
+            </li>
+          ))}
         </ul>
+
+        <p className="font-sans text-[15px] sm:text-[16px] text-[#c9c9cf] leading-[1.75] max-w-[540px] lg:max-w-none mb-6 lg:mb-8">
+          Mutho is a coffee addict who loves to ramble about the things above. This site is his
+          personal space to write about whatever else is on his mind.
+        </p>
+
+        {/* Now playing — di HP & desktop tampil di sini (kartu lengkap dengan progress) */}
+        <NowPlayingCard className="mb-6 lg:mb-8" />
+
+        {/* Bahasa: di desktop ikut kolom profil, di HP tetap di bawah (lihat akhir halaman) */}
+        <div className="hidden lg:block">
+          <Languages />
+        </div>
       </aside>
 
-      {/* ── Main Content ── */}
-      <div className="flex-1 min-w-0 flex justify-center">
-        <div className="w-full max-w-3xl px-6 md:px-14 pt-8 pb-3 sm:py-10">
-          {/* Penghitung pengunjung: pojok kanan atas (di desktop pindah ke header, lihat root.tsx) */}
-          <div className="flex justify-end mb-3 sm:hidden">
-            <VisitBadge />
-          </div>
+      {/* ── Kolom kanan: tulisan/foto terbaru + timeline ── */}
+      <div className="min-w-0 lg:pt-1">
+        {/* Dua kartu atas: tulisan terbaru & foto terbaru. Sekaligus jalan pintas ke Writing/Gallery. */}
+        <HomeTiles post={post} photo={photo} />
 
-          <Hero initial={presence as unknown as LanyardData | null} />
+        <Section label="Work Experience">
+          <WorkItem index={0} company="Teacher" period="2022 — Present" />
+          <WorkItem index={1} company="Web Developer" period="2018 — 2022" />
+          <WorkItem index={2} company="IT Support" period="2016 — 2018" />
+          <WorkItem index={3} company="Accountant" period="2015 — 2016" />
+          <WorkItem index={4} company="Turkish - Indonesian Translator" period="2013 — 2015" />
+        </Section>
 
-          <ul className="flex flex-wrap gap-1.5 mb-5" aria-label="Interests">
-            {INTERESTS.map(tag => (
-              <li
-                key={tag}
-                className="font-mono text-[12px] text-[#cfcfd6] rounded-full border border-[#1e1e1e] px-2.5 py-1"
-                style={{background: 'rgba(255,255,255,0.04)'}}>
-                {tag}
-              </li>
-            ))}
-          </ul>
+        <Section label="Education">
+          <WorkItem index={5} company="Universitas Jambi" role="Jambi, Indonesia" period="2018 — 2022" />
+          <WorkItem index={6} company="Sulaimaniyah Boarding School" role="Istanbul, Turkey" period="2009 — 2013" />
+        </Section>
 
-          <p className="font-sans text-[15px] sm:text-[16px] text-[#c9c9cf] leading-[1.75] max-w-[540px] mb-6">
-            Mutho is a coffee addict who loves to ramble about the things above. This site is his
-            personal space to write about whatever else is on his mind.
-          </p>
+        <Section label="Community">
+          <WorkItem index={7} company="KIKEN" href="https://discord.gg/DNcNBQaqgM" role="Discord Server" period="Dec 2026 — Present" />
+        </Section>
 
-          {/* Now playing — di HP tampil di sini (di desktop sudah ada di sidebar kanan) */}
-          <NowPlayingCard className="lg:hidden mb-6" />
-
-          {/* Dua kartu atas (HP): tulisan terbaru & foto terbaru. Sekaligus jadi jalan pintas ke Writing/Gallery. */}
-          <HomeTiles post={post} photo={photo} />
-
-          <Section label="Work Experience">
-            <WorkItem index={0} company="Teacher" period="2022 — Present" />
-            <WorkItem index={1} company="Web Developer" period="2018 — 2022" />
-            <WorkItem index={2} company="IT Support" period="2016 — 2018" />
-            <WorkItem index={3} company="Accountant" period="2015 — 2016" />
-            <WorkItem index={4} company="Turkish - Indonesian Translator" period="2013 — 2015" />
-          </Section>
-
-          <Section label="Education">
-            <WorkItem index={5} company="Universitas Jambi" role="Jambi, Indonesia" period="2018 — 2022" />
-            <WorkItem index={6} company="Sulaimaniyah Boarding School" role="Istanbul, Turkey" period="2009 — 2013" />
-          </Section>
-
-          <Section label="Community">
-            <WorkItem index={7} company="KIKEN" href="https://discord.gg/DNcNBQaqgM" role="Discord Server" period="Dec 2026 — Present" />
-          </Section>
-
-          <section className="mb-7 last:mb-0">
-            <p className="font-mono text-[12px] tracking-[0.16em] uppercase text-[#8b8b93] mb-3">Languages</p>
-            <ul className="flex flex-wrap gap-1.5">
-              {LANGUAGES.map(lang => (
-                <li
-                  key={lang}
-                  className="font-mono text-[13px] text-[#cfcfd6] rounded-full border border-[#1e1e1e] px-3 py-1.5"
-                  style={{background: 'rgba(255,255,255,0.04)'}}>
-                  {lang}
-                </li>
-              ))}
-            </ul>
-          </section>
-
+        <div className="lg:hidden">
+          <Languages />
         </div>
       </div>
 
-      {/* ── Right Sidebar: Now Playing (sticky, real Spotify data) ── */}
-      <aside className="hidden lg:block w-[220px] shrink-0 border-l border-[#1e1e1e] px-5 py-10 sticky top-[52px] self-start h-[calc(100vh-52px)]">
-        <NowPlayingWidget />
-      </aside>
-
     </div>
+  )
+}
+
+function Languages() {
+  return (
+    <section className="mb-7 last:mb-0">
+      <p className="font-mono text-[12px] tracking-[0.16em] uppercase text-[#8b8b93] mb-3">Languages</p>
+      <ul className="flex flex-wrap gap-1.5">
+        {LANGUAGES.map(lang => (
+          <li
+            key={lang}
+            className="font-mono text-[13px] text-[#cfcfd6] rounded-full border border-[#1e1e1e] px-3 py-1.5"
+            style={{background: 'rgba(255,255,255,0.04)'}}>
+            {lang}
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -279,12 +278,12 @@ function Hero({initial}: {initial: LanyardData | null}) {
   const otherActivities = (data?.activities ?? []).filter(a => a.type !== 4 && a.name !== 'Spotify')
   const hasExtras = Boolean(customStatus?.state || customStatus?.emoji || otherActivities.length > 0)
 
-  const sizeCls = 'w-[84px] h-[84px] sm:w-[120px] sm:h-[120px]'
+  const sizeCls = 'w-[84px] h-[84px] sm:w-[120px] sm:h-[120px] lg:w-[112px] lg:h-[112px]'
   const ringCls = 'rounded-full ring-2 ring-[#4a9eff]/45 ring-offset-[3px] ring-offset-[#0a0a0a]'
 
   return (
-    <section className="mb-5">
-      <div className="flex items-center gap-4 sm:gap-6">
+    <section className="mb-5 lg:mb-6">
+      <div className="flex items-center gap-4 sm:gap-6 lg:flex-col lg:items-start lg:gap-6">
         {status === 'loading' ? (
           <div className={`skeleton-line ${sizeCls} rounded-full shrink-0`} aria-hidden="true" />
         ) : (
@@ -324,10 +323,10 @@ function Hero({initial}: {initial: LanyardData | null}) {
         )}
 
         <div className="min-w-0">
-          <h1 className="font-display text-[34px] sm:text-[42px] leading-[1.1] text-[#f0f0f0] tracking-[-0.02em]">
+          <h1 className="font-display text-[34px] sm:text-[42px] lg:text-[52px] leading-[1.1] text-[#f0f0f0] tracking-[-0.02em]">
             Mutho<span className="text-[#4a9eff]">.</span>
           </h1>
-          <p className="font-mono text-[13px] text-[#8b8b93] mt-1.5">A Vagabond</p>
+          <p className="font-mono text-[13px] lg:text-[14px] text-[#8b8b93] mt-1.5">A Vagabond</p>
           {statusMeta && (
             <p className="font-mono text-[12px] text-[#8b8b93] mt-2 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full shrink-0" style={{background: statusMeta.color}} />
@@ -385,9 +384,9 @@ const DIM_OVERLAY = {background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rg
 const TEXT_SHADOW = {textShadow: '0 1px 8px rgba(0,0,0,0.65)'}
 
 function HomeTiles({post, photo}: {post: LatestPost | null; photo: LatestPhoto | null}) {
-  const cardCls = 'relative block h-[168px] rounded-2xl border border-[#1e1e1e] bg-[#111111] overflow-hidden transition-transform active:scale-[0.98]'
+  const cardCls = 'relative block h-[168px] lg:h-[210px] rounded-2xl border border-[#1e1e1e] bg-[#111111] overflow-hidden transition-transform active:scale-[0.98] lg:hover:border-[#2c2c32]'
   return (
-    <div className="grid grid-cols-2 gap-2.5 mb-8 lg:hidden">
+    <div className="grid grid-cols-2 gap-2.5 lg:gap-4 mb-8 lg:mb-14">
       {post ? (
         post.image ? (
           // Tulisan terbaru punya gambar -> tampil seperti kartu foto: gambar penuh + judul di atas gradasi
@@ -395,20 +394,20 @@ function HomeTiles({post, photo}: {post: LatestPost | null; photo: LatestPhoto |
             <ResilientImage src={post.image} className="absolute inset-0 w-full h-full object-cover" style={IMG_DIM} />
             <div className="absolute inset-0" style={DIM_OVERLAY} aria-hidden="true" />
             <span
-              className="absolute top-3 left-3.5 font-mono text-[10px] tracking-[0.16em] uppercase text-[#f0f0f0]"
+              className="absolute top-3 left-3.5 lg:top-4 lg:left-5 font-mono text-[10px] lg:text-[11px] tracking-[0.16em] uppercase text-[#f0f0f0]"
               style={{textShadow: '0 1px 6px rgba(0,0,0,0.7)'}}>
               Latest writing
             </span>
-            <div className="absolute inset-x-0 bottom-0 p-3.5">
-              <h3 className="font-display text-[18px] leading-snug text-[#f0f0f0] line-clamp-3" style={TEXT_SHADOW}>{post.title}</h3>
+            <div className="absolute inset-x-0 bottom-0 p-3.5 lg:p-5">
+              <h3 className="font-display text-[18px] lg:text-[21px] leading-snug text-[#f0f0f0] line-clamp-3" style={TEXT_SHADOW}>{post.title}</h3>
               <p className="font-mono text-[11px] text-[#d4d4da] mt-1.5" style={TEXT_SHADOW}>{formatDate(post.publishedAt)}</p>
             </div>
           </Link>
         ) : (
-          <Link to={`/posts/${post.rkey}`} prefetch="intent" className={`${cardCls} p-3.5 flex flex-col justify-between`}>
+          <Link to={`/posts/${post.rkey}`} prefetch="intent" className={`${cardCls} p-3.5 lg:p-5 flex flex-col justify-between`}>
             <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[#4a9eff]">Latest writing</span>
             <div>
-              <h3 className="font-display text-[18px] leading-snug text-[#f0f0f0] line-clamp-4">{post.title}</h3>
+              <h3 className="font-display text-[18px] lg:text-[21px] leading-snug text-[#f0f0f0] line-clamp-4">{post.title}</h3>
               <p className="font-mono text-[11px] text-[#666] mt-2">{formatDate(post.publishedAt)}</p>
             </div>
           </Link>
@@ -427,12 +426,12 @@ function HomeTiles({post, photo}: {post: LatestPost | null; photo: LatestPhoto |
           />
           <div className="absolute inset-0" style={DIM_OVERLAY} aria-hidden="true" />
           <span
-            className="absolute top-3 left-3.5 font-mono text-[10px] tracking-[0.16em] uppercase text-[#f0f0f0]"
+            className="absolute top-3 left-3.5 lg:top-4 lg:left-5 font-mono text-[10px] lg:text-[11px] tracking-[0.16em] uppercase text-[#f0f0f0]"
             style={{textShadow: '0 1px 6px rgba(0,0,0,0.7)'}}>
             Latest photo
           </span>
-          <div className="absolute inset-x-0 bottom-0 p-3.5">
-            <div className="font-mono text-[14px] text-[#f0f0f0]" style={TEXT_SHADOW}>Gallery →</div>
+          <div className="absolute inset-x-0 bottom-0 p-3.5 lg:p-5">
+            <div className="font-mono text-[14px] lg:text-[16px] text-[#f0f0f0]" style={TEXT_SHADOW}>Gallery →</div>
             <div className="font-mono text-[11px] text-[#d4d4da] mt-0.5" style={TEXT_SHADOW}>{formatDate(photo.createdAt)}</div>
           </div>
         </Link>
@@ -485,8 +484,8 @@ function NavTile({to, title, hint, icon}: {to: string; title: string; hint: stri
 
 function Section({label, children}: {label: string; children: React.ReactNode}) {
   return (
-    <section className="mb-7 last:mb-0">
-      <p className="font-mono text-[12px] tracking-[0.16em] uppercase text-[#8b8b93] mb-3">{label}</p>
+    <section className="mb-7 lg:mb-12 last:mb-0">
+      <p className="font-mono text-[12px] tracking-[0.16em] uppercase text-[#8b8b93] mb-3 lg:mb-5">{label}</p>
       <ul className="ml-[5px] border-l border-[#26262b] pl-[18px]">{children}</ul>
     </section>
   )
@@ -507,7 +506,7 @@ function WorkItem({
 }) {
   return (
     <li
-      className="fade-up-item relative pb-5 last:pb-1 sm:flex sm:items-start sm:justify-between sm:gap-4"
+      className="fade-up-item relative pb-5 lg:pb-7 last:pb-1 sm:flex sm:items-start sm:justify-between sm:gap-4"
       style={{'--delay': `${index * 0.08}s`} as CSSProperties}>
       <span
         className="absolute -left-[23px] top-[9px] w-[9px] h-[9px] rounded-full bg-[#0a0a0a] border-2 border-[#4a9eff]"
@@ -518,13 +517,13 @@ function WorkItem({
           href={href}
           target={href ? '_blank' : undefined}
           rel="noopener noreferrer"
-          className={`title-underline font-mono text-[17px] sm:text-[19px] text-[#f0f0f0] ${href ? 'hover:text-[#4a9eff] transition-colors' : ''}`}>
+          className={`title-underline font-mono text-[17px] sm:text-[18px] lg:text-[18px] text-[#f0f0f0] ${href ? 'hover:text-[#4a9eff] transition-colors' : ''}`}>
           {company}
         </a>
-        {role && <div className="font-sans text-[13px] sm:font-mono sm:text-[14px] text-[#8b8b93] mt-1">{role}</div>}
+        {role && <div className="font-sans text-[13px] sm:font-mono sm:text-[13px] text-[#8b8b93] mt-1">{role}</div>}
       </div>
       {/* Di HP periode pindah ke bawah judul (tidak berebut ruang); di sm+ kembali rata kanan */}
-      <span className="block font-mono text-[11.5px] text-[#4a9eff] mt-1 sm:mt-0.5 sm:text-[15px] sm:text-[#aaaaaa] shrink-0">
+      <span className="block font-mono text-[11.5px] text-[#4a9eff] mt-1 sm:mt-1 sm:text-[14px] sm:text-[#8b8b93] shrink-0">
         {period}
       </span>
     </li>
