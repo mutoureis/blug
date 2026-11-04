@@ -26,7 +26,7 @@ export type Comment = {
   parentId: string | null // komentar induk (level atas) — balasan selalu 1 level
   replyTo: string | null // komentar spesifik yang dibalas (untuk notifikasi)
   name: string
-  email?: string // privat, tidak pernah dikirim ke browser
+  email?: string // privat, tidak pernah dikirim ke browser; wajib untuk pengunjung, kosong untuk admin
   notify: boolean
   body: string
   createdAt: string
@@ -145,9 +145,11 @@ export async function createComment(input: CreateInput, ip: string, isAdmin: boo
   const name = isAdmin ? ADMIN_NAME() : clean(input.name, 40)
   if (!name) throw new CommentError('Nama wajib diisi.')
 
+  // Email wajib untuk semua pengunjung (admin dikecualikan) — dipakai untuk notifikasi balasan.
   let email: string | undefined
-  if (!isAdmin && input.email) {
+  if (!isAdmin) {
     email = clean(input.email, 120).toLowerCase()
+    if (!email) throw new CommentError('Email wajib diisi.')
     if (!EMAIL_RE.test(email)) throw new CommentError('Format email tidak valid.')
   }
 
