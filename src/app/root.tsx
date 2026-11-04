@@ -69,27 +69,8 @@ export function Layout({children}: {children: React.ReactNode}) {
     {key: 'social', label: 'Social', icon: 'social', selected: contactOpen, onClick: () => setContactOpen(o => !o)},
   ]
 
-  // Juttu (kolom komentar) sengaja dimuat lewat effect, bukan <script> statis di <head>.
-  // Kalau statis, script-nya (defer) bisa nyuntik konten ke #juttu-comments SEBELUM React
-  // selesai hydrate elemen itu -> hydration mismatch (React error #418/#423) -> widget
-  // ke-reset/ilang. useEffect di sini baru jalan SETELAH commit awal selesai, jadi aman.
   React.useEffect(() => {
     setContactOpen(false)
-  }, [location.pathname])
-
-  React.useEffect(() => {
-    const SRC = 'https://cdn.jsdelivr.net/npm/juttu@latest/juttu-embed.js'
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${SRC}"]`)
-    if (existing) {
-      // Sudah pernah dimuat (mis. navigasi client-side ke post lain) — Juttu belum tentu
-      // auto rescan, jadi re-append supaya browser re-run script-nya buat scan ulang DOM.
-      existing.remove()
-    }
-    const script = document.createElement('script')
-    script.src = SRC
-    script.defer = true
-    script.dataset.theme = 'dark'
-    document.head.appendChild(script)
   }, [location.pathname])
 
   React.useEffect(() => {
