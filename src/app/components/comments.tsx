@@ -116,7 +116,7 @@ export function Comments({postId, postTitle}: {postId: string; postTitle: string
       write(LS_EMAIL, email)
       setBody('')
       setReplyTo(null)
-      setSentNote(email ? 'Terkirim. Kamu akan diberi email kalau ada yang membalas.' : 'Terkirim.')
+      setSentNote(isAdmin ? 'Terkirim.' : 'Terkirim. Kamu akan diberi email kalau ada yang membalas.')
       await load()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Gagal mengirim komentar')
@@ -195,10 +195,11 @@ export function Comments({postId, postTitle}: {postId: string; postTitle: string
             <input
               className={inputCls}
               type="email"
-              placeholder="Email (opsional, untuk notifikasi balasan)"
+              placeholder="Email (wajib, untuk notifikasi balasan)"
               value={email}
               onChange={e => setEmail(e.target.value)}
               maxLength={120}
+              required
               autoComplete="email"
             />
           </div>
@@ -224,7 +225,7 @@ export function Comments({postId, postTitle}: {postId: string; postTitle: string
         />
         <div className="flex items-center justify-between gap-3">
           <p className="text-[12px] text-[#666]">
-            {!isAdmin && 'Email tidak ditampilkan ke publik. '}
+            {!isAdmin && 'Email wajib diisi, tidak ditampilkan ke publik. '}
             {body.length}/2000
           </p>
           <button
