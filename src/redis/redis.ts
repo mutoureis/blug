@@ -19,6 +19,9 @@ function getClient(): Redis {
   return _client
 }
 
+// Dipakai sistem komentar (perlu error yang tidak ditelan, jadi akses klien langsung).
+export const getRedis = getClient
+
 export const getCachedPosts = async (): Promise<LeafletDocument[] | null> => {
   try {
     const res = await getClient().get('posts')
