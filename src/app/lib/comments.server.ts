@@ -1,23 +1,25 @@
-// Sistem komentar sendiri (tanpa akun Bluesky/GitHub). Disimpan di Redis, dengan notifikasi email
-// ke pengomen saat dibalas, dan ke pemilik situs saat ada komentar baru.
+// Sistem komentar sendiri. Semua autentikasi lewat Google ("Sign in with Google"): pengomen wajib login,
+// jadi email & nama selalu asli. Komentar disimpan di Redis; notifikasi balasan dikirim lewat Resend.
 //
 // Redis:
 //   comment:{id}   -> JSON Comment
 //   comments:{post} -> sorted set (skor = waktu) berisi id komentar post itu
-//   rl:c:{ip}      -> pembatas laju
+//   rl:c:*         -> pembatas laju
 //
 // Env:
-//   COMMENTS_SECRET          wajib, string acak panjang (untuk cookie admin & token berhenti-langganan)
-//   COMMENTS_ADMIN_PASSWORD  wajib kalau mau membalas/menghapus sebagai admin
-//   COMMENTS_NOTIFY_EMAIL    email pemilik, dapat notifikasi tiap komentar baru (opsional)
-//   COMMENTS_ADMIN_NAME      nama tampilan admin (default "mutho")
+//   GOOGLE_CLIENT_ID         wajib. OAuth Client ID (Web) dari Google Cloud Console.
+//   COMMENTS_SECRET          wajib. String acak panjang (≥16) untuk menandatangani cookie sesi & token berhenti-langganan.
+//   COMMENTS_ADMIN_EMAIL     email Google-mu: akun ini otomatis jadi "penulis" (balas & hapus komentar).
+//                            Kalau kosong, dipakai COMMENTS_NOTIFY_EMAIL.
+//   COMMENTS_NOTIFY_EMAIL    email pemilik, dapat notifikasi tiap komentar baru
+//   COMMENTS_ADMIN_NAME      nama tampilan penulis (default "mutho")
 //   RESEND_API_KEY           API key Resend (https://resend.com). Tanpa ini komentar tetap jalan,
 //                            hanya email tidak terkirim.
 //   MAIL_FROM                pengirim di domain yang sudah diverifikasi di Resend,
 //                            mis. "mutho <comments@mutho.my.id>"
 //   SITE_URL                 default https://mutho.my.id
 
-import {createHmac, randomBytes, timingSafeEqual} from 'node:crypto'
+import {createHmac, createPublicKey, randomBytes, timingSafeEqual, verify as cryptoVerify} from 'node:crypto'
 import {getRedis} from '../../redis/redis.js'
 
 export type Comment = {
@@ -26,7 +28,7 @@ export type Comment = {
   parentId: string | null // komentar induk (level atas) — balasan selalu 1 level
   replyTo: string | null // komentar spesifik yang dibalas (untuk notifikasi)
   name: string
-  email?: string // privat, tidak pernah dikirim ke browser; wajib untuk pengunjung, kosong untuk admin
+  email?: string // email Google (terverifikasi), privat, tidak pernah dikirim ke browser; kosong untuk admin
   notify: boolean
   body: string
   createdAt: string
@@ -68,22 +70,35 @@ const safeEqual = (a: string, b: string) => {
   return A.length === B.length && timingSafeEqual(A, B)
 }
 
-export const ADMIN_COOKIE = 'cm_admin'
-export const adminCookieValue = () => hmac('admin')
+/* ── Sesi login (Google -> cookie bertanda tangan, 30 hari) ── */
 
-export function isAdminRequest(request: Request): boolean {
-  try {
-    const cookie = request.headers.get('cookie') ?? ''
-    const m = cookie.match(new RegExp(`(?:^|;\\s*)${ADMIN_COOKIE}=([a-f0-9]+)`))
-    return !!m && safeEqual(m[1], adminCookieValue())
-  } catch {
-    return false
-  }
+export type Session = {email: string; name: string; isAdmin: boolean}
+
+export const SESSION_COOKIE = 'cm_session'
+const SESSION_DAYS = 30
+
+const adminEmail = () => (process.env.COMMENTS_ADMIN_EMAIL || process.env.COMMENTS_NOTIFY_EMAIL || '').trim().toLowerCase()
+const isAdminEmail = (email: string) => !!adminEmail() && email === adminEmail()
+
+export function makeSessionCookie(who: {email: string; name: string}, secure: boolean): string {
+  const payload = Buffer.from(JSON.stringify({e: who.email, n: who.name, x: Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400})).toString('base64url')
+  return `${SESSION_COOKIE}=${payload}.${hmac(`s:${payload}`)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure ? '; Secure' : ''}`
 }
 
-export function checkAdminPassword(password: string): boolean {
-  const expected = process.env.COMMENTS_ADMIN_PASSWORD
-  return !!expected && safeEqual(password, expected)
+export const clearSessionCookie = (secure: boolean) =>
+  `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`
+
+export function readSession(request: Request): Session | null {
+  try {
+    const cookie = request.headers.get('cookie') ?? ''
+    const m = cookie.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([A-Za-z0-9_-]+)\\.([a-f0-9]{64})`))
+    if (!m || !safeEqual(m[2], hmac(`s:${m[1]}`))) return null
+    const p = JSON.parse(Buffer.from(m[1], 'base64url').toString())
+    if (typeof p.e !== 'string' || typeof p.x !== 'number' || p.x < Date.now() / 1000) return null
+    return {email: p.e, name: String(p.n ?? p.e), isAdmin: isAdminEmail(p.e)}
+  } catch {
+    return null
+  }
 }
 
 export const unsubscribeToken = (id: string) => hmac(`unsub:${id}`)
@@ -117,48 +132,119 @@ export async function listComments(post: string): Promise<PublicComment[]> {
   }))
 }
 
+/* ── Login Google (Google Identity Services) ── */
+// Browser mendapat ID token (JWT) dari Google; di sini tanda tangannya diperiksa ke kunci publik Google,
+// lalu email (sudah diverifikasi Google) & nama dipakai. Tidak butuh pustaka tambahan.
+
+let _jwks: {keys: any[]; at: number} | null = null
+async function googleKeys(force = false): Promise<any[]> {
+  if (!force && _jwks && Date.now() - _jwks.at < 3_600_000) return _jwks.keys
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/certs', {signal: AbortSignal.timeout(8000)})
+    if (!res.ok) throw new Error(`certs ${res.status}`)
+    const {keys} = (await res.json()) as {keys: any[]}
+    _jwks = {keys, at: Date.now()}
+    return keys
+  } catch (err) {
+    console.error('[comments] gagal mengambil kunci Google:', err)
+    if (_jwks) return _jwks.keys // pakai salinan lama kalau Google sedang tidak terjangkau
+    throw new CommentError('Tidak bisa memverifikasi login Google sekarang, coba lagi sebentar lagi.', 502)
+  }
+}
+
+export const googleClientId = () => process.env.GOOGLE_CLIENT_ID || null
+
+export async function verifyGoogleToken(idToken: string): Promise<{email: string; name: string}> {
+  const clientId = googleClientId()
+  if (!clientId) throw new CommentError('Login Google belum diaktifkan.', 400)
+  const bad = () => new CommentError('Login Google tidak valid atau sudah kedaluwarsa. Silakan login ulang.', 401)
+
+  const parts = typeof idToken === 'string' ? idToken.split('.') : []
+  if (parts.length !== 3 || idToken.length > 4096) throw bad()
+  let header: any, payload: any
+  try {
+    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString())
+    payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString())
+  } catch {
+    throw bad()
+  }
+  if (header?.alg !== 'RS256' || !header.kid) throw bad()
+
+  let jwk = (await googleKeys()).find(k => k.kid === header.kid)
+  if (!jwk) jwk = (await googleKeys(true)).find(k => k.kid === header.kid) // kunci baru (rotasi)
+  if (!jwk) throw bad()
+
+  const signatureOk = cryptoVerify(
+    'RSA-SHA256',
+    Buffer.from(`${parts[0]}.${parts[1]}`),
+    createPublicKey({key: jwk, format: 'jwk'}),
+    Buffer.from(parts[2], 'base64url'),
+  )
+  if (!signatureOk) throw bad()
+
+  const now = Math.floor(Date.now() / 1000)
+  const emailVerified = payload.email_verified === true || payload.email_verified === 'true'
+  if (
+    !['https://accounts.google.com', 'accounts.google.com'].includes(payload.iss) ||
+    payload.aud !== clientId ||
+    typeof payload.exp !== 'number' ||
+    payload.exp < now ||
+    !emailVerified ||
+    typeof payload.email !== 'string'
+  ) {
+    throw bad()
+  }
+  const email = payload.email.toLowerCase()
+  if (!EMAIL_RE.test(email)) throw bad()
+  return {email, name: clean(payload.name, 40) || email.split('@')[0].slice(0, 40)}
+}
+
+/* ── Login ── */
+
+// Tukar ID token Google dengan sesi. Token diperiksa penuh di server; yang masuk ke cookie hanya email & nama.
+export async function loginWithGoogle(idToken: string): Promise<{who: {email: string; name: string}; session: Session}> {
+  const who = await verifyGoogleToken(idToken)
+  return {who, session: {email: who.email, name: who.name, isAdmin: isAdminEmail(who.email)}}
+}
+
 /* ── Tulis ── */
 
 export type CreateInput = {
   post: string
   postTitle?: string
   parentId?: string | null
-  name?: string
-  email?: string
   body: string
-  website?: string // honeypot
 }
 
 const clean = (s: unknown, max: number) => (typeof s === 'string' ? s.replace(/\r\n/g, '\n').trim().slice(0, max) : '')
 const esc = (s: string) => s.replace(/[&<>"']/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]!))
 
-export async function createComment(input: CreateInput, ip: string, isAdmin: boolean): Promise<{comment: PublicComment | null}> {
+// Hanya pengguna yang sudah login Google (session) yang boleh berkomentar. Tidak ada jalur anonim.
+export async function createComment(input: CreateInput, session: Session | null, ip: string): Promise<PublicComment> {
+  if (!session) throw new CommentError('Masuk dengan Google dulu untuk berkomentar.', 401)
   if (!POST_RE.test(input.post)) throw new CommentError('post tidak valid')
-
-  // Honeypot: kolom tersembunyi ini cuma diisi bot. Pura-pura sukses supaya bot tidak belajar.
-  if (input.website) return {comment: null}
 
   const body = clean(input.body, 2000)
   if (body.length < 2) throw new CommentError('Komentar terlalu pendek.')
   if ((body.match(/https?:\/\//gi) ?? []).length > 2) throw new CommentError('Terlalu banyak tautan.')
 
-  const name = isAdmin ? ADMIN_NAME() : clean(input.name, 40)
-  if (!name) throw new CommentError('Nama wajib diisi.')
-
-  // Email wajib untuk semua pengunjung (admin dikecualikan) — dipakai untuk notifikasi balasan.
-  let email: string | undefined
-  if (!isAdmin) {
-    email = clean(input.email, 120).toLowerCase()
-    if (!email) throw new CommentError('Email wajib diisi.')
-    if (!EMAIL_RE.test(email)) throw new CommentError('Format email tidak valid.')
-  }
+  const isAdmin = session.isAdmin
+  const name = isAdmin ? ADMIN_NAME() : clean(session.name, 40) || session.email.split('@')[0].slice(0, 40)
+  const email = isAdmin ? undefined : session.email
 
   const redis = getRedis()
 
-  // Batas laju per IP (admin dikecualikan): 3 komentar/menit, 30/hari.
+  // Batas laju (penulis dikecualikan): 3 komentar/menit dan 30/hari, per akun Google dan per IP.
   if (!isAdmin) {
-    const [perMin, perDay] = await Promise.all([bump(`rl:c:m:${ip}`, 60), bump(`rl:c:d:${ip}`, 86400)])
-    if (perMin > 3 || perDay > 30) throw new CommentError('Terlalu cepat, coba lagi sebentar lagi.', 429)
+    const counters = await Promise.all([
+      bump(`rl:c:m:${session.email}`, 60),
+      bump(`rl:c:d:${session.email}`, 86400),
+      bump(`rl:c:m:${ip}`, 60),
+      bump(`rl:c:d:${ip}`, 86400),
+    ])
+    if (counters[0] > 3 || counters[2] > 3 || counters[1] > 30 || counters[3] > 30) {
+      throw new CommentError('Terlalu cepat, coba lagi sebentar lagi.', 429)
+    }
   }
 
   // Tentukan induk & yang dibalas. Balasan ke balasan tetap menempel di induk level atas.
@@ -183,7 +269,6 @@ export async function createComment(input: CreateInput, ip: string, isAdmin: boo
     createdAt: new Date().toISOString(),
     isOwner: isAdmin,
   }
-
   await redis.set(key(comment.id), JSON.stringify(comment))
   await redis.zadd(listKey(input.post), Date.now(), comment.id)
 
@@ -192,15 +277,13 @@ export async function createComment(input: CreateInput, ip: string, isAdmin: boo
   await notify(comment, target, postTitle).catch(err => console.error('[comments] notifikasi gagal:', err))
 
   return {
-    comment: {
-      id: comment.id,
-      parentId,
-      replyToName: target?.name ?? null,
-      name,
-      body,
-      createdAt: comment.createdAt,
-      isOwner: isAdmin,
-    },
+    id: comment.id,
+    parentId,
+    replyToName: target?.name ?? null,
+    name,
+    body,
+    createdAt: comment.createdAt,
+    isOwner: isAdmin,
   }
 }
 
@@ -235,12 +318,12 @@ export async function unsubscribe(id: string): Promise<void> {
 /* ── Email ── */
 
 // Kirim lewat Resend (HTTP API). Domain pengirim harus diverifikasi (SPF + DKIM) supaya tidak masuk spam.
-async function send(to: string, subject: string, html: string, text: string, headers?: Record<string, string>) {
+async function send(to: string, subject: string, html: string, text: string, headers?: Record<string, string>): Promise<boolean> {
   const key = process.env.RESEND_API_KEY
   const from = process.env.MAIL_FROM
   if (!key || !from) {
-    console.warn('[comments] RESEND_API_KEY / MAIL_FROM belum diset — email notifikasi tidak dikirim.')
-    return
+    console.warn('[comments] RESEND_API_KEY / MAIL_FROM belum diset — email tidak dikirim.')
+    return false
   }
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -249,11 +332,12 @@ async function send(to: string, subject: string, html: string, text: string, hea
     signal: AbortSignal.timeout(8000),
   })
   if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 300)}`)
+  return true
 }
 
 async function notify(c: Comment, target: Comment | null, postTitle: string) {
   const link = `${SITE_URL()}/posts/${c.post}#comment-${c.id}`
-  const jobs: Promise<void>[] = []
+  const jobs: Promise<unknown>[] = []
 
   // 1) Pengomen yang dibalas -> email (kalau memberi email, tidak berhenti langganan, dan bukan balasan ke diri sendiri)
   if (target?.email && target.notify && target.email !== c.email) {
@@ -266,7 +350,7 @@ async function notify(c: Comment, target: Comment | null, postTitle: string) {
           <p>Hai ${esc(target.name)}, <b>${esc(c.name)}</b> membalas komentarmu di <b>${esc(postTitle)}</b>:</p>
           <blockquote style="margin:12px 0;padding:8px 14px;border-left:3px solid #4a9eff;white-space:pre-wrap">${esc(c.body)}</blockquote>
           <p><a href="${link}">Lihat & balas</a></p>
-          <p style="color:#888;font-size:12px">Kamu menerima email ini karena mengisi email saat berkomentar. <a href="${unsub}">Berhenti menerima notifikasi</a>.</p>
+          <p style="color:#888;font-size:12px">Kamu menerima email ini karena berkomentar dengan akun Google-mu. <a href="${unsub}">Berhenti menerima notifikasi</a>.</p>
         </div>`,
         `${c.name} membalas komentarmu di "${postTitle}":\n\n${c.body}\n\nLihat: ${link}\n\nBerhenti notifikasi: ${unsub}`,
         {'List-Unsubscribe': `<${unsub}>`},
