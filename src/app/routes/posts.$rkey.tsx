@@ -16,6 +16,7 @@ import {getDid} from 'src/atproto/getDid'
 import {useRef} from 'react'
 import {Link as ExternalLink} from '../components/link'
 import {BskyEmbed} from '../components/bsky-embed'
+import {Comments} from '../components/comments'
 
 export const loader = async ({params}: LoaderFunctionArgs) => {
   const {rkey} = params
@@ -41,7 +42,7 @@ export const meta: MetaFunction<typeof loader> = ({data}) => {
     {name: 'og:title', content: data?.post.title},
     {name: 'og:description', content: data?.post.description ?? `${postText.split(' ').slice(0, 100).join(' ')}...`},
     ...(ogImageUrl ? [{property: 'og:image', content: ogImageUrl}] : []),
-    // Dipakai Juttu buat nemuin thread Bluesky yang jadi kolom komentar post ini.
+    // Penanda dokumen standard.site (verifikasi/penemuan post oleh aplikasi ATProto lain).
     ...(data ? [{tagName: 'link', rel: 'site.standard.document', href: `at://${data.did}/site.standard.document/${data.rkey}`}] : []),
   ]
 }
@@ -102,11 +103,9 @@ export default function Posts() {
         ))}
       </div>
 
-      {/* Kolom komentar (Juttu, baca thread Bluesky lewat site.standard.document) */}
-      {/* suppressHydrationWarning: Juttu (script eksternal `defer`) nyuntik konten ke div ini
-          sebelum React selesai hydrate, jadi wajar kalau isinya beda dari yang di-render server. */}
+      {/* Kolom komentar sendiri (Redis) — tanpa akun, dengan notifikasi email balasan */}
       <div className="mt-12 pt-8 border-t border-[#1e1e1e]">
-        <div id="juttu-comments" suppressHydrationWarning />
+        <Comments postId={rkey} postTitle={post.title} />
       </div>
 
     </div>
