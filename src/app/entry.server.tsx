@@ -20,10 +20,10 @@ function setSecurityHeaders(responseHeaders: Headers) {
     "Content-Security-Policy",
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://giscus.app https://embed.bsky.app https://cdn.jsdelivr.net",
-      "style-src 'self' 'unsafe-inline' https://giscus.app https://fonts.googleapis.com",
-      "frame-src https://giscus.app",
-      "connect-src 'self' https://giscus.app https://api.github.com https://public.api.bsky.app https://api.juttu.app https://bsky.social https://plc.directory https://*.host.bsky.network https://api.lanyard.rest wss://api.lanyard.rest",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://giscus.app https://embed.bsky.app https://cdn.jsdelivr.net https://accounts.google.com",
+      "style-src 'self' 'unsafe-inline' https://giscus.app https://fonts.googleapis.com https://accounts.google.com",
+      "frame-src https://giscus.app https://accounts.google.com",
+      "connect-src 'self' https://giscus.app https://api.github.com https://public.api.bsky.app https://api.juttu.app https://accounts.google.com https://bsky.social https://plc.directory https://*.host.bsky.network https://api.lanyard.rest wss://api.lanyard.rest",
       "img-src 'self' data: https: blob:",
       "font-src 'self' data: https://fonts.gstatic.com",
     ].join("; ")
