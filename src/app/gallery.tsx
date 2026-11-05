@@ -64,7 +64,7 @@ const SOCIALS = [
   {icon: '🌾', label: 'Grain', href: 'https://grain.social/profile/mutho.my.id'},
   {icon: '🎵', label: 'Spotify',  href: 'https://open.spotify.com/user/zq8df1jprwpxyiu9mkn691ai8'},
   {icon: '🎮', label: 'Steam',    href: 'https://steamcommunity.com/id/moebatsu'},
-  {icon: '✉️', label: 'Email',    href: 'mailto:amuthohhari@gmail.com'},
+  {icon: '✉️', label: 'Email',    href: 'mailto:mail@mutho.my.id'},
 ]
 
 function Lightbox({images, initialIndex, onClose}: {images: ImageItem[]; initialIndex: number; onClose: () => void}) {
