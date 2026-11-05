@@ -5,7 +5,7 @@ import {useLanyard, DISCORD_STATUS_META} from '../hooks/use-lanyard.js'
 /* Menu "Social" — bottom sheet di HP, popover di desktop (gayanya ada di tailwind.css: .social-*).
    - Ikon garis SVG (seragam dengan ikon nav), bukan emoji.
    - Dikelompokkan + handle akun di bawah nama.
-   - Email: tombol Copy (alamat dirakit di JS, tidak tertulis polos di HTML).
+   - Email: tap langsung buka aplikasi email / Gmail web (alamat dirakit di JS, tidak tertulis polos di HTML).
    - Status Discord live (Lanyard) — WebSocket cuma dibuka saat sheet terbuka.
    - Esc / tap area gelap / tarik ke bawah untuk menutup. */
 
@@ -177,15 +177,37 @@ export function SocialSheet({open, onClose}: {open: boolean; onClose: () => void
     if (open) sheetRef.current?.focus({preventScroll: true})
   }, [open])
 
-  const copyEmail = async () => {
-    const email = ['amuthohhari', 'gmail.com'].join('@')
-    try {
-      await navigator.clipboard.writeText(email)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1800)
-    } catch {
-      window.location.href = `mailto:${email}`
+  const openEmail = async () => {
+    const email = ['mail', 'mutho.my.id'].join('@')
+    // Coba buka aplikasi email bawaan (mailto:). Kalau tidak ada yang terbuka
+    // (misal desktop tanpa aplikasi email), fallback ke Gmail web, lalu ke copy.
+    let left = false
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') left = true
     }
+    const onBlur = () => {
+      left = true
+    }
+    document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('blur', onBlur)
+    window.location.href = `mailto:${email}`
+
+    setTimeout(async () => {
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('blur', onBlur)
+      if (left) return
+      const gmail = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}`
+      const win = window.open(gmail, '_blank', 'noopener,noreferrer')
+      if (!win) {
+        try {
+          await navigator.clipboard.writeText(email)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1800)
+        } catch {
+          /* abaikan */
+        }
+      }
+    }, 1200)
   }
 
   let rowIndex = 0
@@ -233,19 +255,19 @@ export function SocialSheet({open, onClose}: {open: boolean; onClose: () => void
         <p className="font-mono text-[10.5px] tracking-[0.16em] uppercase text-[#6c6c74] mt-3.5 mb-1.5 px-1">Contact</p>
         <button
           type="button"
-          onClick={copyEmail}
+          onClick={openEmail}
           className="social-row w-full text-left flex items-center gap-3.5 rounded-[14px] px-2 py-2.5 min-h-[56px] hover:bg-[rgba(255,255,255,0.05)] active:bg-[rgba(255,255,255,0.07)] transition-colors"
           style={{'--i': rowIndex} as CSSProperties}>
           <IconBox name="email" color="#4a9eff" />
           <span className="min-w-0 flex-1">
             <span className="block font-mono text-[15px] text-[#f0f0f0]">Email</span>
-            <span className="block font-mono text-[12px] text-[#8b8b93] mt-0.5">Tap to copy address</span>
+            <span className="block font-mono text-[12px] text-[#8b8b93] mt-0.5">Tap to send an email</span>
           </span>
           <span
             className="font-mono text-[11px] rounded-full px-3 py-1.5 border shrink-0"
             style={{color: '#4a9eff', borderColor: 'rgba(74,158,255,0.4)', background: 'rgba(74,158,255,0.08)'}}
             aria-live="polite">
-            {copied ? 'Copied ✓' : 'Copy'}
+            {copied ? 'Copied ✓' : 'Open'}
           </span>
         </button>
       </div>
