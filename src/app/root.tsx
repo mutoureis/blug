@@ -168,7 +168,7 @@ export function Layout({children}: {children: React.ReactNode}) {
               {/* ── Kiri: Brand ── */}
               <Link to="/" prefetch="intent" className="flex flex-1 items-center gap-2 group sm:gap-2.5">
                 <span className="font-display text-[20px] lg:text-[22px] text-[#f0f0f0] hidden sm:inline tracking-[-0.01em]">
-                  mutho<span className="text-[#4a9eff]">.</span>my.id
+                  mutho<span className="text-[#4a9eff]">.</span>my<span className="text-[#4a9eff]">.</span>id
                 </span>
               </Link>
 
