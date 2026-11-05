@@ -2,7 +2,7 @@ import type {MetaFunction} from '@remix-run/node'
 import {Link} from '@remix-run/react'
 
 // GANTI dengan emailmu yang aktif. Alamat ini tampil publik di halaman.
-const CONTACT_EMAIL = 'EMAILMU@gmail.com'
+const CONTACT_EMAIL = 'mail@mutho.my.id'
 const UPDATED = '5 November 2026'
 
 export const meta: MetaFunction = () => [
