@@ -266,9 +266,6 @@ export function Comments({postId, postTitle}: {postId: string; postTitle: string
             <>
               <p className="text-[13px] text-[#d8d8d8]">Masuk dengan Google untuk berkomentar{replyTo ? ` (membalas ${replyTo.name})` : ''}.</p>
               <div ref={googleBtn} className="min-h-[44px]" />
-              <p className="text-[12px] text-[#666]">
-                Email-mu dipakai hanya untuk memberi notifikasi saat komentarmu dibalas, dan tidak ditampilkan ke publik.
-              </p>
             </>
           ) : (
             <p className="text-[13px] text-[#888]">Kolom komentar belum aktif.</p>
