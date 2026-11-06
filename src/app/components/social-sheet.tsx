@@ -116,7 +116,9 @@ const GROUPS: Group[] = [
   },
 ]
 
-const TOTAL_LINKS = GROUPS.reduce((n, g) => n + g.items.length, 0) + 1 // + email
+const EMAIL = 'mail@mutho.my.id'
+
+const TOTAL_LINKS =GROUPS.reduce((n, g) => n + g.items.length, 0) + 1 // + email
 
 function IconBox({name, color, dot}: {name: string; color: string; dot?: string}) {
   return (
@@ -178,7 +180,7 @@ export function SocialSheet({open, onClose}: {open: boolean; onClose: () => void
   }, [open])
 
   const openEmail = async () => {
-    const email = ['mail', 'mutho.my.id'].join('@')
+    const email = EMAIL
     // Coba buka aplikasi email bawaan (mailto:). Kalau tidak ada yang terbuka
     // (misal desktop tanpa aplikasi email), fallback ke Gmail web, lalu ke copy.
     let left = false
@@ -261,14 +263,11 @@ export function SocialSheet({open, onClose}: {open: boolean; onClose: () => void
           <IconBox name="email" color="#4a9eff" />
           <span className="min-w-0 flex-1">
             <span className="block font-mono text-[15px] text-[#f0f0f0]">Email</span>
-            <span className="block font-mono text-[12px] text-[#8b8b93] mt-0.5">Tap to send an email</span>
+            <span className="block font-mono text-[12px] text-[#8b8b93] mt-0.5 truncate" aria-live="polite">
+              {copied ? 'Email disalin ✓' : EMAIL}
+            </span>
           </span>
-          <span
-            className="font-mono text-[11px] rounded-full px-3 py-1.5 border shrink-0"
-            style={{color: '#4a9eff', borderColor: 'rgba(74,158,255,0.4)', background: 'rgba(74,158,255,0.08)'}}
-            aria-live="polite">
-            {copied ? 'Copied ✓' : 'Open'}
-          </span>
+          <ArrowOut />
         </button>
       </div>
     </>
